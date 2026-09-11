@@ -6,7 +6,7 @@ Build safe experiment substrate first, then Git isolation, evaluators, product a
 
 ## Phases
 
-- [ ] **Phase 1: Foundation** - Workspace, typed decisions, frozen config, journal, and CLI shell.
+- [x] **Phase 1: Foundation** - Workspace, typed decisions, frozen config, journal, and CLI shell.
 - [ ] **Phase 2: Git Loop** - Isolated worktrees, protected paths, branches, locks, and recovery.
 - [ ] **Phase 3: Evaluator SDK** - Native traits, JSONL protocol, command, Cargo, and diff adapters.
 - [ ] **Phase 4: Product Web** - Browser, Lighthouse, accessibility, SEO/GEO adapters and fixture.
@@ -24,7 +24,7 @@ Plans:
 - [x] 01-01: Workspace quality policy and typed decision core
 - [x] 01-02: Manifest schema, validation, and canonical identity
 - [x] 01-03: Append-only journal state and recovery model
-- [ ] 01-04: CLI init, doctor, and baseline shell
+- [x] 01-04: CLI init, doctor, and baseline shell
 
 ### Phase 2: Git Loop
 **Goal**: Execute recoverable candidates outside caller checkout with containment enforcement.
@@ -55,7 +55,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 3/4 | In progress | - |
+| 1. Foundation | 4/4 | Complete | 2026-09-11 |
 | 2. Git Loop | 0/TBD | Not started | - |
 | 3. Evaluator SDK | 0/TBD | Not started | - |
 | 4. Product Web | 0/TBD | Not started | - |

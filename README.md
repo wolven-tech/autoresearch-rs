@@ -1,5 +1,32 @@
 # autoresearch
 
+> **Rust fork status:** foundation implementation is active. Rust workspace now
+> provides validated experiment contracts, deterministic candidate policy,
+> frozen input identities, crash-recovery journal model, and `init`, `doctor`,
+> and baseline-freeze CLI commands. Candidate execution and evaluator protocol
+> are not shipped yet; baseline output correctly reports evaluator evidence as
+> pending. Original Python implementation remains below and runnable unchanged.
+
+## Rust foundation quick start
+
+```bash
+cargo run -p autoresearch-cli -- --help
+cargo run -p autoresearch-cli -- --repository /path/to/repository init
+# Review and commit autoresearch.toml, program.md, and .gitignore change:
+# .autoresearch/
+cargo run -p autoresearch-cli -- --repository /path/to/repository doctor
+cargo run -p autoresearch-cli -- --repository /path/to/repository baseline
+```
+
+`init` never overwrites existing contract files. `doctor` is read-only and does
+not execute configured agents or evaluators. `baseline` requires clean, tracked
+control inputs and writes only under ignored `.autoresearch/runs/`. It freezes
+identity and opens journal; it does not fabricate a baseline score.
+
+Architecture and safety decisions: [`docs/plans/2026-09-11-autoresearch-rust-platform-design.md`](docs/plans/2026-09-11-autoresearch-rust-platform-design.md).
+
+## Original upstream implementation
+
 ![teaser](progress.png)
 
 *One day, frontier AI research used to be done by meat computers in between eating, sleeping, having other fun, and synchronizing once in a while using sound wave interconnect in the ritual of "group meeting". That era is long gone. Research is now entirely the domain of autonomous swarms of AI agents running across compute cluster megastructures in the skies. The agents claim that we are now in the 10,205th generation of the code base, in any case no one could tell if that's right or wrong as the "code" is now a self-modifying binary that has grown beyond human comprehension. This repo is the story of how it all began. -@karpathy, March 2026*.

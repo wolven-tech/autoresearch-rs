@@ -1,0 +1,24 @@
+[package]
+name = "autoresearch-cli"
+description = "Command-line interface for safe repository experiments"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "autoresearch"
+path = "src/main.rs"
+
+[dependencies]
+autoresearch-config = { path = "../../crates/autoresearch-config" }
+autoresearch-core = { path = "../../crates/autoresearch-core" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
