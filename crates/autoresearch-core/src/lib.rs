@@ -1,11 +1,12 @@
 //! Domain types and deterministic decision policy for autoresearch.
 //!
-//! Core stays free of process, filesystem, Git, and network concerns. It owns
-//! only validated experiment measurements and candidate-selection semantics.
+//! Core stays free of process, filesystem I/O, Git commands, and network
+//! concerns. It owns validated experiment values and selection semantics.
 
 mod decision;
 mod journal;
 mod metric;
+mod repository;
 
 pub use decision::{
     CandidateDecision, Complexity, DecisionError, DecisionReason, Disposition, EvaluationSnapshot,
@@ -19,3 +20,4 @@ pub use metric::{
     FiniteValue, GateOutcome, Measurement, MetricDirection, MetricError, MetricKind,
     NumericMetricKind,
 };
+pub use repository::{CommitId, RepositoryInspector, RepositorySnapshot, RepositoryValueError};

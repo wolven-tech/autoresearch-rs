@@ -29,7 +29,13 @@ Plans:
 ### Phase 2: Git Loop
 **Goal**: Execute recoverable candidates outside caller checkout with containment enforcement.
 **Depends on**: Phase 1
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 02-01: Repository validation and exclusive run lock
+- [ ] 02-02: Run branch and isolated candidate worktree lifecycle
+- [ ] 02-03: Protected-path and symlink containment enforcement
+- [ ] 02-04: Journal-driven Git recovery and safe cleanup
 
 ### Phase 3: Evaluator SDK
 **Goal**: Run trusted native and untrusted subprocess evaluators through one typed contract.
@@ -56,7 +62,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Complete | 2026-09-11 |
-| 2. Git Loop | 0/TBD | Not started | - |
+| 2. Git Loop | 0/4 | In progress | - |
 | 3. Evaluator SDK | 0/TBD | Not started | - |
 | 4. Product Web | 0/TBD | Not started | - |
 | 5. Agents and Evidence | 0/TBD | Not started | - |
