@@ -21,3 +21,7 @@ dev/
 
 # Results file
 results.tsv
+
+# Rust build output and autoresearch run state
+target/
+.autoresearch/
