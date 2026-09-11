@@ -18,12 +18,13 @@ Build safe experiment substrate first, then Git isolation, evaluators, product a
 ### Phase 1: Foundation
 **Goal**: Compile a strict Rust workspace that validates frozen experiment contracts and deterministic candidate decisions.
 **Depends on**: Nothing
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 01-01: Workspace quality policy and typed decision core
 - [x] 01-02: Manifest schema, validation, and canonical identity
-- [ ] 01-03: Append-only journal and CLI init/doctor/baseline shell
+- [x] 01-03: Append-only journal state and recovery model
+- [ ] 01-04: CLI init, doctor, and baseline shell
 
 ### Phase 2: Git Loop
 **Goal**: Execute recoverable candidates outside caller checkout with containment enforcement.
@@ -54,7 +55,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 2/3 | In progress | - |
+| 1. Foundation | 3/4 | In progress | - |
 | 2. Git Loop | 0/TBD | Not started | - |
 | 3. Evaluator SDK | 0/TBD | Not started | - |
 | 4. Product Web | 0/TBD | Not started | - |
