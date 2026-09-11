@@ -22,7 +22,7 @@ Build safe experiment substrate first, then Git isolation, evaluators, product a
 
 Plans:
 - [x] 01-01: Workspace quality policy and typed decision core
-- [ ] 01-02: Manifest schema, validation, and canonical identity
+- [x] 01-02: Manifest schema, validation, and canonical identity
 - [ ] 01-03: Append-only journal and CLI init/doctor/baseline shell
 
 ### Phase 2: Git Loop
@@ -54,7 +54,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 1/3 | In progress | - |
+| 1. Foundation | 2/3 | In progress | - |
 | 2. Git Loop | 0/TBD | Not started | - |
 | 3. Evaluator SDK | 0/TBD | Not started | - |
 | 4. Product Web | 0/TBD | Not started | - |
