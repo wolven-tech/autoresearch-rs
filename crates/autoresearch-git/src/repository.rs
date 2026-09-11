@@ -91,6 +91,48 @@ pub enum GitError {
         /// Bounded porcelain status.
         status: String,
     },
+    /// Run ID cannot be represented safely in lock metadata.
+    #[error("run ID must be 1-256 ASCII letters, digits, dots, dashes, or underscores")]
+    InvalidRunId,
+    /// Ignored run-state path is structurally unsafe.
+    #[error("unsafe run-state path {}: {reason}", path.display())]
+    UnsafeRunState {
+        /// Unsafe path.
+        path: PathBuf,
+        /// Stable refusal reason.
+        reason: &'static str,
+    },
+    /// Repository has another active experiment owner.
+    #[error("repository lock is held at {}: {detail}", path.display())]
+    LockHeld {
+        /// Lock evidence path.
+        path: PathBuf,
+        /// Bounded owner metadata, when readable.
+        detail: String,
+    },
+    /// Repository identity moved after caller captured its snapshot.
+    #[error("repository changed between validation and lock acquisition")]
+    StaleSnapshot,
+    /// Lock filesystem operation failed.
+    #[error("failed to {operation} at {}: {source}", path.display())]
+    LockIo {
+        /// Stable operation description.
+        operation: &'static str,
+        /// Affected lock path.
+        path: PathBuf,
+        /// Underlying operating-system error.
+        #[source]
+        source: std::io::Error,
+    },
+    /// System clock cannot provide lock acquisition time.
+    #[error("system clock is before Unix epoch")]
+    ClockBeforeEpoch,
+    /// Millisecond timestamp cannot fit stable lock schema.
+    #[error("system timestamp exceeds lock schema range")]
+    ClockOverflow,
+    /// Lock owner metadata could not be encoded.
+    #[error("failed to encode lock owner: {0}")]
+    LockSerialization(#[from] serde_json::Error),
     /// Domain identity returned by Git was invalid.
     #[error(transparent)]
     InvalidIdentity(#[from] RepositoryValueError),
@@ -207,6 +249,31 @@ fn ensure_run_state_safe(root: &Path) -> Result<(), GitError> {
         return Err(GitError::RunStateTracked {
             paths: bounded(&tracked),
         });
+    }
+
+    let state_path = root.join(".autoresearch");
+    match fs::symlink_metadata(&state_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(GitError::UnsafeRunState {
+                path: state_path,
+                reason: "run-state directory cannot be a symlink",
+            });
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            return Err(GitError::UnsafeRunState {
+                path: state_path,
+                reason: "run-state path must be a directory",
+            });
+        }
+        Ok(_) => {}
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(GitError::Io {
+                operation: "inspect run-state path",
+                path: state_path,
+                source,
+            });
+        }
     }
 
     let output = git_output(root, &["check-ignore", "-q", ".autoresearch/probe"])?;

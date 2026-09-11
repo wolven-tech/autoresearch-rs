@@ -89,6 +89,8 @@ name = "autoresearch-git"
 version = "0.1.0"
 dependencies = [
  "autoresearch-core",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
