@@ -7,6 +7,7 @@ mod decision;
 mod journal;
 mod metric;
 mod repository;
+mod workspace;
 
 pub use decision::{
     CandidateDecision, Complexity, DecisionError, DecisionReason, Disposition, EvaluationSnapshot,
@@ -21,3 +22,6 @@ pub use metric::{
     NumericMetricKind,
 };
 pub use repository::{CommitId, RepositoryInspector, RepositorySnapshot, RepositoryValueError};
+pub use workspace::{
+    CandidateWorkspace, CandidateWorkspaceManager, RunId, RunWorkspace, WorkspaceValueError,
+};
