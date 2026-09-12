@@ -2,6 +2,7 @@
 
 mod commit;
 mod identity;
+mod recovery;
 
 use crate::repository::{bounded, command_error, git_output, git_text};
 use crate::{GitError, RunLockGuard};
@@ -170,6 +171,15 @@ impl<'a> LockedGitRepository<'a> {
         candidate: &CandidateWorkspace,
     ) -> Result<(), GitError> {
         self.ensure_run_current(run)?;
+        self.ensure_candidate_owned(run, candidate)
+    }
+
+    fn ensure_candidate_owned(
+        &self,
+        run: &RunWorkspace,
+        candidate: &CandidateWorkspace,
+    ) -> Result<(), GitError> {
+        self.ensure_run_owned(run)?;
         let expected = CandidateWorkspace::new(
             run,
             candidate.index(),
@@ -193,15 +203,7 @@ impl<'a> LockedGitRepository<'a> {
     }
 
     fn ensure_run_current(&self, run: &RunWorkspace) -> Result<(), GitError> {
-        if run.run_id() != &self.run_id || run.base_commit() != self.snapshot.base_commit() {
-            return Err(GitError::ForeignRunWorkspace);
-        }
-        if let Some(worktree) = checked_out_worktree(self.snapshot.root(), run.branch_ref())? {
-            return Err(GitError::RunBranchCheckedOut {
-                branch_ref: run.branch_ref().to_owned(),
-                worktree,
-            });
-        }
+        self.ensure_run_owned(run)?;
         let actual = resolve_optional_ref(self.snapshot.root(), run.branch_ref())?;
         if actual.as_ref() == Some(run.head_commit()) {
             Ok(())
@@ -211,6 +213,19 @@ impl<'a> LockedGitRepository<'a> {
                 actual: actual.map_or_else(|| "<missing>".into(), |commit| commit.to_string()),
             })
         }
+    }
+
+    fn ensure_run_owned(&self, run: &RunWorkspace) -> Result<(), GitError> {
+        if run.run_id() != &self.run_id || run.base_commit() != self.snapshot.base_commit() {
+            return Err(GitError::ForeignRunWorkspace);
+        }
+        if let Some(worktree) = checked_out_worktree(self.snapshot.root(), run.branch_ref())? {
+            return Err(GitError::RunBranchCheckedOut {
+                branch_ref: run.branch_ref().to_owned(),
+                worktree,
+            });
+        }
+        Ok(())
     }
 
     fn stale_or_command_error(
@@ -409,7 +424,12 @@ fn ensure_candidate_clean(path: &Path) -> Result<(), GitError> {
     let status = git_text(
         path,
         "inspect candidate status",
-        &["status", "--porcelain=v1", "--untracked-files=all"],
+        &[
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignored=matching",
+        ],
     )?;
     if status.is_empty() {
         Ok(())

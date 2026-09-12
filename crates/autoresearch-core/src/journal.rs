@@ -44,6 +44,8 @@ pub enum JournalEvent {
     CandidateDecisionRecorded {
         /// Candidate number matching preparation record.
         index: u32,
+        /// Exact candidate commit evaluated by frozen policy.
+        candidate_commit: String,
         /// Typed evaluator output.
         snapshot: EvaluationSnapshot,
         /// Frozen-policy result.
@@ -186,6 +188,8 @@ pub enum RecoveryAction {
         index: u32,
         /// Relocation-independent worktree identifier.
         worktree_id: String,
+        /// Exact candidate commit whose decision must be applied.
+        candidate_commit: String,
         /// Durable decision that must be applied exactly.
         decision: CandidateDecision,
     },
@@ -296,6 +300,7 @@ enum CandidateStage {
     Decided {
         index: u32,
         worktree_id: String,
+        candidate_commit: String,
         decision: CandidateDecision,
     },
 }
@@ -362,9 +367,10 @@ impl Machine {
             } => self.prepare(*index, parent_commit, worktree_id),
             JournalEvent::CandidateDecisionRecorded {
                 index,
+                candidate_commit,
                 snapshot,
                 decision,
-            } => self.record_decision(*index, snapshot, decision),
+            } => self.record_decision(*index, candidate_commit, snapshot, decision),
             JournalEvent::CandidateFinalized { index, outcome } => self.finalize(*index, outcome),
             JournalEvent::RunStopped { reason } => self.stop(reason),
         }
@@ -424,6 +430,7 @@ impl Machine {
     fn record_decision(
         &mut self,
         index: u32,
+        candidate_commit: &str,
         _snapshot: &EvaluationSnapshot,
         decision: &CandidateDecision,
     ) -> Result<(), JournalError> {
@@ -447,6 +454,7 @@ impl Machine {
         self.active = Some(CandidateStage::Decided {
             index,
             worktree_id,
+            candidate_commit: checked(candidate_commit, "candidate_commit")?.to_owned(),
             decision: decision.clone(),
         });
         Ok(())
@@ -460,6 +468,7 @@ impl Machine {
         let Some(CandidateStage::Decided {
             index: active_index,
             worktree_id,
+            candidate_commit,
             decision,
         }) = self.active.take()
         else {
@@ -469,6 +478,7 @@ impl Machine {
             self.active = Some(CandidateStage::Decided {
                 index: active_index,
                 worktree_id,
+                candidate_commit,
                 decision,
             });
             return Err(JournalError::CandidateIndex {
@@ -478,7 +488,9 @@ impl Machine {
         }
 
         match (decision.disposition, outcome) {
-            (Disposition::Keep, CandidateFinalization::Kept { commit }) => {
+            (Disposition::Keep, CandidateFinalization::Kept { commit })
+                if commit == &candidate_commit =>
+            {
                 self.current_commit = Some(checked(commit, "kept_commit")?.to_owned());
             }
             (Disposition::Discard, CandidateFinalization::Discarded) => {}
@@ -486,6 +498,7 @@ impl Machine {
                 self.active = Some(CandidateStage::Decided {
                     index: active_index,
                     worktree_id,
+                    candidate_commit,
                     decision,
                 });
                 return Err(JournalError::FinalizationMismatch);
@@ -537,10 +550,12 @@ impl Machine {
                 Some(CandidateStage::Decided {
                     index,
                     worktree_id,
+                    candidate_commit,
                     decision,
                 }) => RecoveryAction::FinalizeCandidate {
                     index: *index,
                     worktree_id: worktree_id.clone(),
+                    candidate_commit: candidate_commit.clone(),
                     decision: decision.clone(),
                 },
                 None if self.baseline.is_some() => RecoveryAction::PrepareCandidate {
@@ -666,6 +681,7 @@ mod tests {
             3,
             JournalEvent::CandidateDecisionRecorded {
                 index: 1,
+                candidate_commit: "def".into(),
                 snapshot: snapshot(11.0),
                 decision: decision(disposition),
             },
@@ -712,6 +728,7 @@ mod tests {
             RecoveryAction::FinalizeCandidate {
                 index: 1,
                 worktree_id: "candidate-1".into(),
+                candidate_commit: "def".into(),
                 decision: decision(Disposition::Keep)
             }
         );
@@ -863,6 +880,7 @@ mod tests {
                 1,
                 JournalEvent::CandidateDecisionRecorded {
                     index: 1,
+                    candidate_commit: "def".into(),
                     snapshot: snapshot(11.0),
                     decision: decision(Disposition::Keep),
                 },
@@ -886,6 +904,21 @@ mod tests {
         ));
         assert_eq!(
             replay_journal(&entries),
+            Err(JournalError::FinalizationMismatch)
+        );
+
+        let mut wrong_commit = decided(Disposition::Keep);
+        wrong_commit.push(entry(
+            4,
+            JournalEvent::CandidateFinalized {
+                index: 1,
+                outcome: CandidateFinalization::Kept {
+                    commit: "other".into(),
+                },
+            },
+        ));
+        assert_eq!(
+            replay_journal(&wrong_commit),
             Err(JournalError::FinalizationMismatch)
         );
     }

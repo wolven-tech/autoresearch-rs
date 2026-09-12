@@ -7,6 +7,7 @@ mod containment;
 mod decision;
 mod journal;
 mod metric;
+mod recovery;
 mod repository;
 mod workspace;
 
@@ -25,6 +26,10 @@ pub use journal::{
 pub use metric::{
     FiniteValue, GateOutcome, Measurement, MetricDirection, MetricError, MetricKind,
     NumericMetricKind,
+};
+pub use recovery::{
+    CandidateRecovery, CandidateRecoveryManager, CandidateRecoveryRequest, RecoveredCandidateState,
+    RecoveryValueError,
 };
 pub use repository::{CommitId, RepositoryInspector, RepositorySnapshot, RepositoryValueError};
 pub use workspace::{

@@ -1,8 +1,8 @@
 //! Typed failures shared by Git infrastructure adapters.
 
 use autoresearch_core::{
-    CandidateCommitError, ContainmentViolation, RepoPathError, RepositoryValueError,
-    WorkspaceValueError,
+    CandidateCommitError, ContainmentViolation, RecoveryValueError, RepoPathError,
+    RepositoryValueError, WorkspaceValueError,
 };
 use std::path::PathBuf;
 use thiserror::Error;
@@ -224,6 +224,31 @@ pub enum GitError {
     CandidateMutationRace {
         /// Bounded changed-path evidence.
         detail: String,
+    },
+    /// Journal-declared candidate state cannot form canonical recovery values.
+    #[error(transparent)]
+    InvalidRecovery(#[from] RecoveryValueError),
+    /// Journal and retained ref/worktree state conflict at a crash boundary.
+    #[error("candidate recovery state conflicts with journal: {detail}")]
+    RecoveryStateConflict {
+        /// Bounded mismatch evidence.
+        detail: String,
+    },
+    /// Filesystem and Git disagree about exact candidate worktree registration.
+    #[error("candidate worktree registration mismatch at {}: {detail}", path.display())]
+    WorktreeRegistrationMismatch {
+        /// Deterministic candidate path.
+        path: PathBuf,
+        /// Bounded registration evidence.
+        detail: String,
+    },
+    /// Candidate worktree carries a lock reason owned by another operation.
+    #[error("candidate worktree has foreign lock reason at {}: `{reason}`", path.display())]
+    ForeignWorktreeLock {
+        /// Deterministic candidate path.
+        path: PathBuf,
+        /// Observed lock reason.
+        reason: String,
     },
     /// Lock filesystem operation failed.
     #[error("failed to {operation} at {}: {source}", path.display())]

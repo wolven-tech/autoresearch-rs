@@ -167,8 +167,9 @@ after target validation. Failed candidate retains logs and diff snapshot.
 
 Every state transition is journaled before its side effect. Resume replays
 journal and reruns only incomplete evaluator work. Runner never guesses about
-partial Git decisions. File locks prevent concurrent ownership of same target
-and run branch.
+partial Git decisions: each recorded decision binds exact evaluated candidate
+commit, and finalization must match it. File locks prevent concurrent ownership
+of same target and run branch.
 
 Runs are serial by default. This preserves comparable machine conditions and
 prevents product checks or GPU training from exhausting host resources.
