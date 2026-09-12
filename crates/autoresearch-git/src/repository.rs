@@ -1,142 +1,12 @@
 //! Read-only Git repository inspection.
 
-use autoresearch_core::{CommitId, RepositoryInspector, RepositorySnapshot, RepositoryValueError};
+use crate::GitError;
+use autoresearch_core::{CommitId, RepositoryInspector, RepositorySnapshot};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use thiserror::Error;
 
 const DIAGNOSTIC_LIMIT: usize = 8 * 1024;
-
-/// Failure to validate or operate on experiment Git state.
-#[derive(Debug, Error)]
-pub enum GitError {
-    /// Target path does not exist.
-    #[error("repository target does not exist: {}", .0.display())]
-    TargetMissing(PathBuf),
-    /// Target path is not a directory.
-    #[error("repository target is not a directory: {}", .0.display())]
-    TargetNotDirectory(PathBuf),
-    /// Filesystem operation failed.
-    #[error("failed to {operation} at {}: {source}", path.display())]
-    Io {
-        /// Stable operation description.
-        operation: &'static str,
-        /// Affected path.
-        path: PathBuf,
-        /// Underlying operating-system error.
-        #[source]
-        source: std::io::Error,
-    },
-    /// Target is not inside a Git worktree.
-    #[error("target is not a Git worktree: {detail}")]
-    NotWorktree {
-        /// Bounded Git diagnostic.
-        detail: String,
-    },
-    /// Bare repositories cannot host candidate worktrees safely.
-    #[error("bare repositories cannot run experiments")]
-    BareRepository,
-    /// Base ref must be explicit and nonblank.
-    #[error("base ref cannot be blank")]
-    BlankBaseRef,
-    /// Requested base ref did not resolve to a commit.
-    #[error("base ref `{base_ref}` did not resolve to a commit: {detail}")]
-    BaseRefNotFound {
-        /// User-provided ref.
-        base_ref: String,
-        /// Bounded Git diagnostic.
-        detail: String,
-    },
-    /// Current worktree has no resolvable HEAD commit.
-    #[error("repository HEAD did not resolve to a commit: {detail}")]
-    HeadNotFound {
-        /// Bounded Git diagnostic.
-        detail: String,
-    },
-    /// Git command failed.
-    #[error("Git operation `{operation}` failed: {detail}")]
-    CommandFailed {
-        /// Stable operation description.
-        operation: &'static str,
-        /// Bounded Git diagnostic.
-        detail: String,
-    },
-    /// Git returned output that was not UTF-8.
-    #[error("Git operation `{operation}` returned non-UTF-8 output")]
-    NonUtf8Output {
-        /// Stable operation description.
-        operation: &'static str,
-    },
-    /// Git returned an unexpected boolean.
-    #[error("Git operation `{operation}` returned unexpected value `{value}`")]
-    UnexpectedValue {
-        /// Stable operation description.
-        operation: &'static str,
-        /// Bounded output value.
-        value: String,
-    },
-    /// `.autoresearch/` is not ignored and could enter candidate commits.
-    #[error(".autoresearch/ must be ignored by Git")]
-    RunStateNotIgnored,
-    /// Repository already tracks files in `.autoresearch/`.
-    #[error("repository tracks run-state paths: {paths}")]
-    RunStateTracked {
-        /// Bounded tracked-path list.
-        paths: String,
-    },
-    /// Caller checkout contains tracked or untracked changes.
-    #[error("repository must be clean before a run: {status}")]
-    DirtyRepository {
-        /// Bounded porcelain status.
-        status: String,
-    },
-    /// Run ID cannot be represented safely in lock metadata.
-    #[error("run ID must be 1-256 ASCII letters, digits, dots, dashes, or underscores")]
-    InvalidRunId,
-    /// Ignored run-state path is structurally unsafe.
-    #[error("unsafe run-state path {}: {reason}", path.display())]
-    UnsafeRunState {
-        /// Unsafe path.
-        path: PathBuf,
-        /// Stable refusal reason.
-        reason: &'static str,
-    },
-    /// Repository has another active experiment owner.
-    #[error("repository lock is held at {}: {detail}", path.display())]
-    LockHeld {
-        /// Lock evidence path.
-        path: PathBuf,
-        /// Bounded owner metadata, when readable.
-        detail: String,
-    },
-    /// Repository identity moved after caller captured its snapshot.
-    #[error("repository changed between validation and lock acquisition")]
-    StaleSnapshot,
-    /// Lock filesystem operation failed.
-    #[error("failed to {operation} at {}: {source}", path.display())]
-    LockIo {
-        /// Stable operation description.
-        operation: &'static str,
-        /// Affected lock path.
-        path: PathBuf,
-        /// Underlying operating-system error.
-        #[source]
-        source: std::io::Error,
-    },
-    /// System clock cannot provide lock acquisition time.
-    #[error("system clock is before Unix epoch")]
-    ClockBeforeEpoch,
-    /// Millisecond timestamp cannot fit stable lock schema.
-    #[error("system timestamp exceeds lock schema range")]
-    ClockOverflow,
-    /// Lock owner metadata could not be encoded.
-    #[error("failed to encode lock owner: {0}")]
-    LockSerialization(#[from] serde_json::Error),
-    /// Domain identity returned by Git was invalid.
-    #[error(transparent)]
-    InvalidIdentity(#[from] RepositoryValueError),
-}
 
 /// System Git implementation of read-only repository validation.
 #[derive(Debug, Clone, Copy, Default)]
@@ -312,7 +182,11 @@ fn git_boolean(root: &Path, operation: &'static str, args: &[&str]) -> Result<bo
     }
 }
 
-fn git_text(root: &Path, operation: &'static str, args: &[&str]) -> Result<String, GitError> {
+pub(crate) fn git_text(
+    root: &Path,
+    operation: &'static str,
+    args: &[&str],
+) -> Result<String, GitError> {
     let output = git_output(root, args)?;
     if !output.status.success() {
         return Err(command_error(operation, &output));
@@ -322,7 +196,7 @@ fn git_text(root: &Path, operation: &'static str, args: &[&str]) -> Result<Strin
         .map_err(|_| GitError::NonUtf8Output { operation })
 }
 
-fn git_output(root: &Path, args: &[&str]) -> Result<Output, GitError> {
+pub(crate) fn git_output(root: &Path, args: &[&str]) -> Result<Output, GitError> {
     Command::new("git")
         .arg("-C")
         .arg(root)
@@ -335,7 +209,7 @@ fn git_output(root: &Path, args: &[&str]) -> Result<Output, GitError> {
         })
 }
 
-fn command_error(operation: &'static str, output: &Output) -> GitError {
+pub(crate) fn command_error(operation: &'static str, output: &Output) -> GitError {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let detail = if stderr.trim().is_empty() {
@@ -349,6 +223,6 @@ fn command_error(operation: &'static str, output: &Output) -> GitError {
     }
 }
 
-fn bounded(value: &str) -> String {
+pub(crate) fn bounded(value: &str) -> String {
     value.chars().take(DIAGNOSTIC_LIMIT).collect()
 }

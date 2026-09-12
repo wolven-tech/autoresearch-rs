@@ -1,7 +1,7 @@
 //! Exclusive ownership lock for one experiment repository.
 
 use crate::{GitError, GitRepository};
-use autoresearch_core::{RepositoryInspector, RepositorySnapshot};
+use autoresearch_core::{RepositoryInspector, RepositorySnapshot, RunId};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -64,7 +64,7 @@ impl RunLockGuard {
     /// Returns [`GitError::LockHeld`] when another process owns repository,
     /// or a typed validation/filesystem error when lock cannot be made safely.
     pub fn acquire(snapshot: &RepositorySnapshot, run_id: &str) -> Result<Self, GitError> {
-        validate_run_id(run_id)?;
+        let run_id = RunId::new(run_id).map_err(|_| GitError::InvalidRunId)?;
         let state_path = snapshot.root().join(".autoresearch");
         prepare_state_directory(&state_path)?;
         let lock_path = state_path.join("run.lock");
@@ -105,7 +105,7 @@ impl RunLockGuard {
 
         let owner = RunLockOwner {
             schema_version: 1,
-            run_id: run_id.to_owned(),
+            run_id: run_id.to_string(),
             process_id: std::process::id(),
             acquired_unix_millis: acquisition_time()?,
         };
@@ -127,19 +127,6 @@ impl RunLockGuard {
     #[must_use]
     pub const fn owner(&self) -> &RunLockOwner {
         &self.owner
-    }
-}
-
-fn validate_run_id(run_id: &str) -> Result<(), GitError> {
-    if run_id.is_empty()
-        || run_id.len() > 256
-        || !run_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
-    {
-        Err(GitError::InvalidRunId)
-    } else {
-        Ok(())
     }
 }
 
