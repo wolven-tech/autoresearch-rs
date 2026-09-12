@@ -33,7 +33,7 @@ Plans:
 
 Plans:
 - [x] 02-01: Repository validation and exclusive run lock
-- [ ] 02-02: Run branch and isolated candidate worktree lifecycle
+- [x] 02-02: Run branch and isolated candidate worktree lifecycle
 - [ ] 02-03: Protected-path and symlink containment enforcement
 - [ ] 02-04: Journal-driven Git recovery and safe cleanup
 
@@ -62,7 +62,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Complete | 2026-09-11 |
-| 2. Git Loop | 1/4 | In progress | - |
+| 2. Git Loop | 2/4 | In progress | - |
 | 3. Evaluator SDK | 0/TBD | Not started | - |
 | 4. Product Web | 0/TBD | Not started | - |
 | 5. Agents and Evidence | 0/TBD | Not started | - |
