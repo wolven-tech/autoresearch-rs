@@ -1,6 +1,9 @@
 //! Typed failures shared by Git infrastructure adapters.
 
-use autoresearch_core::{RepositoryValueError, WorkspaceValueError};
+use autoresearch_core::{
+    CandidateCommitError, ContainmentViolation, RepoPathError, RepositoryValueError,
+    WorkspaceValueError,
+};
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -173,6 +176,55 @@ pub enum GitError {
         /// Bounded topology diagnostic.
         detail: String,
     },
+    /// Candidate contains no Git-visible mutation.
+    #[error("candidate has no changed paths to commit")]
+    CandidateUnchanged,
+    /// Candidate changed state ignored by Git and therefore absent from commit.
+    #[error("candidate contains ignored paths that cannot enter commit: {paths}")]
+    IgnoredCandidatePaths {
+        /// Bounded ignored-path list.
+        paths: String,
+    },
+    /// Candidate path or ancestor is a symbolic link.
+    #[error("candidate changed symbolic-link path `{path}`")]
+    CandidateSymlink {
+        /// Repository-relative rejected path.
+        path: String,
+    },
+    /// Candidate contains a nested Git repository.
+    #[error("candidate contains nested Git repository at `{path}`")]
+    NestedRepository {
+        /// Repository-relative repository root.
+        path: String,
+    },
+    /// Candidate index entry cannot be represented as a regular file.
+    #[error("candidate path `{path}` has forbidden Git mode `{mode}`")]
+    ForbiddenCandidateMode {
+        /// Repository-relative path.
+        path: String,
+        /// Git tree or index mode.
+        mode: String,
+    },
+    /// Candidate filesystem entry is not a regular file or directory.
+    #[error("unsafe candidate entry `{path}`: {reason}")]
+    UnsafeCandidateEntry {
+        /// Repository-relative path.
+        path: String,
+        /// Stable refusal reason.
+        reason: &'static str,
+    },
+    /// Candidate Git metadata no longer identifies expected linked worktree.
+    #[error("candidate Git identity mismatch: {detail}")]
+    CandidateRepositoryMismatch {
+        /// Bounded mismatch explanation.
+        detail: String,
+    },
+    /// Candidate changed concurrently while commit was being assembled.
+    #[error("candidate changed while commit was being assembled: {detail}")]
+    CandidateMutationRace {
+        /// Bounded changed-path evidence.
+        detail: String,
+    },
     /// Lock filesystem operation failed.
     #[error("failed to {operation} at {}: {source}", path.display())]
     LockIo {
@@ -199,4 +251,13 @@ pub enum GitError {
     /// Domain workspace identity derived by adapter was invalid.
     #[error(transparent)]
     InvalidWorkspace(#[from] WorkspaceValueError),
+    /// Git emitted an invalid repository-relative candidate path.
+    #[error(transparent)]
+    InvalidCandidatePath(#[from] RepoPathError),
+    /// Candidate path violates frozen mutable/protected roots.
+    #[error(transparent)]
+    Containment(#[from] ContainmentViolation),
+    /// Adapter tried to return malformed candidate commit evidence.
+    #[error(transparent)]
+    InvalidCandidateCommit(#[from] CandidateCommitError),
 }

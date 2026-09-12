@@ -3,12 +3,17 @@
 //! Core stays free of process, filesystem I/O, Git commands, and network
 //! concerns. It owns validated experiment values and selection semantics.
 
+mod containment;
 mod decision;
 mod journal;
 mod metric;
 mod repository;
 mod workspace;
 
+pub use containment::{
+    CandidateCommit, CandidateCommitError, CandidateCommitter, ContainmentViolation,
+    MutationBoundary, MutationBoundaryError, RepoPath, RepoPathError,
+};
 pub use decision::{
     CandidateDecision, Complexity, DecisionError, DecisionReason, Disposition, EvaluationSnapshot,
     TieBreaker, select_candidate,

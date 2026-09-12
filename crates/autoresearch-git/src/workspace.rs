@@ -1,5 +1,8 @@
 //! Lock-bound Git branch and candidate-worktree lifecycle adapter.
 
+mod commit;
+mod identity;
+
 use crate::repository::{bounded, command_error, git_output, git_text};
 use crate::{GitError, RunLockGuard};
 use autoresearch_core::{
@@ -141,6 +144,31 @@ impl<'a> LockedGitRepository<'a> {
         run: &RunWorkspace,
         candidate: &CandidateWorkspace,
     ) -> Result<RunWorkspace, GitError> {
+        self.ensure_candidate_current(run, candidate)?;
+        ensure_candidate_clean(candidate.path())?;
+        let candidate_head = resolve_commit(candidate.path(), "resolve candidate HEAD", "HEAD")?;
+        ensure_direct_child(candidate.path(), &candidate_head, run.head_commit())?;
+
+        let output = git_output(
+            self.snapshot.root(),
+            &[
+                "update-ref",
+                run.branch_ref(),
+                candidate_head.as_str(),
+                run.head_commit().as_str(),
+            ],
+        )?;
+        if !output.status.success() {
+            return self.stale_or_command_error(run, "retain candidate", &output);
+        }
+        Ok(run.advanced_to(candidate_head))
+    }
+
+    fn ensure_candidate_current(
+        &self,
+        run: &RunWorkspace,
+        candidate: &CandidateWorkspace,
+    ) -> Result<(), GitError> {
         self.ensure_run_current(run)?;
         let expected = CandidateWorkspace::new(
             run,
@@ -161,24 +189,7 @@ impl<'a> LockedGitRepository<'a> {
                 reason: "candidate worktree resolved outside deterministic path",
             });
         }
-        ensure_detached(candidate.path())?;
-        ensure_candidate_clean(candidate.path())?;
-        let candidate_head = resolve_commit(candidate.path(), "resolve candidate HEAD", "HEAD")?;
-        ensure_direct_child(candidate.path(), &candidate_head, run.head_commit())?;
-
-        let output = git_output(
-            self.snapshot.root(),
-            &[
-                "update-ref",
-                run.branch_ref(),
-                candidate_head.as_str(),
-                run.head_commit().as_str(),
-            ],
-        )?;
-        if !output.status.success() {
-            return self.stale_or_command_error(run, "retain candidate", &output);
-        }
-        Ok(run.advanced_to(candidate_head))
+        ensure_detached(candidate.path())
     }
 
     fn ensure_run_current(&self, run: &RunWorkspace) -> Result<(), GitError> {

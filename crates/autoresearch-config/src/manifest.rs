@@ -1,6 +1,8 @@
 //! TOML manifest parsing, normalization, and cross-field validation.
 
-use autoresearch_core::{MetricDirection, NumericMetricKind};
+use autoresearch_core::{
+    MetricDirection, MutationBoundary, MutationBoundaryError, NumericMetricKind, RepoPath,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
 use thiserror::Error;
@@ -77,7 +79,7 @@ pub enum ManifestError {
 pub struct ValidatedManifest {
     schema_version: u32,
     experiment: Experiment,
-    scope: Scope,
+    scope: MutationBoundary,
     agent: CommandSpec,
     evaluators: Vec<Evaluator>,
     authority: AuthorityCeiling,
@@ -107,7 +109,7 @@ impl ValidatedManifest {
 
     /// Returns normalized mutation scope.
     #[must_use]
-    pub const fn scope(&self) -> &Scope {
+    pub const fn scope(&self) -> &MutationBoundary {
         &self.scope
     }
 
@@ -188,72 +190,6 @@ pub struct Budget {
     pub max_failures: u32,
     /// Maximum wall-clock duration in seconds.
     pub wall_clock_seconds: u64,
-}
-
-/// Normalized repository mutation boundaries.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Scope {
-    mutable_paths: Vec<RepoPath>,
-    protected_paths: Vec<RepoPath>,
-}
-
-impl Scope {
-    /// Returns roots mutation agents may change.
-    #[must_use]
-    pub fn mutable_paths(&self) -> &[RepoPath] {
-        &self.mutable_paths
-    }
-
-    /// Returns immutable roots, including mandatory control files.
-    #[must_use]
-    pub fn protected_paths(&self) -> &[RepoPath] {
-        &self.protected_paths
-    }
-}
-
-/// Safe forward-slash repository-relative path.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[serde(transparent)]
-pub struct RepoPath(String);
-
-impl RepoPath {
-    /// Returns normalized relative representation.
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    fn parse(path: String) -> Result<Self, ManifestError> {
-        let reason = if path.is_empty() {
-            Some("path cannot be empty")
-        } else if path.starts_with('/') {
-            Some("absolute paths are forbidden")
-        } else if path.contains('\\') {
-            Some("use forward slashes for portable identities")
-        } else if path.contains('\0') {
-            Some("NUL bytes are forbidden")
-        } else if path.split('/').any(str::is_empty) {
-            Some("empty path segments are forbidden")
-        } else if path.split('/').any(|segment| matches!(segment, "." | "..")) {
-            Some("dot and parent segments are forbidden")
-        } else {
-            None
-        };
-
-        if let Some(reason) = reason {
-            Err(ManifestError::UnsafePath { path, reason })
-        } else {
-            Ok(Self(path))
-        }
-    }
-
-    fn is_within(&self, parent: &Self) -> bool {
-        self == parent
-            || self
-                .0
-                .strip_prefix(&parent.0)
-                .is_some_and(|suffix| suffix.starts_with('/'))
-    }
 }
 
 /// Executable plus literal arguments and timeout; no shell interpolation.
@@ -520,7 +456,7 @@ impl RawManifest {
     }
 }
 
-fn validate_scope(raw: RawScope) -> Result<Scope, ManifestError> {
+fn validate_scope(raw: RawScope) -> Result<MutationBoundary, ManifestError> {
     if raw.mutable_paths.is_empty() {
         return Err(ManifestError::Blank {
             field: "scope.mutable_paths".into(),
@@ -529,7 +465,7 @@ fn validate_scope(raw: RawScope) -> Result<Scope, ManifestError> {
     let mut mutable_paths = raw
         .mutable_paths
         .into_iter()
-        .map(RepoPath::parse)
+        .map(parse_repo_path)
         .collect::<Result<Vec<_>, _>>()?;
     mutable_paths.sort();
     mutable_paths.dedup();
@@ -538,26 +474,25 @@ fn validate_scope(raw: RawScope) -> Result<Scope, ManifestError> {
         .protected_paths
         .into_iter()
         .chain(CONTROL_PATHS.map(str::to_owned))
-        .map(RepoPath::parse)
+        .map(parse_repo_path)
         .collect::<Result<Vec<_>, _>>()?;
     protected_paths.sort();
     protected_paths.dedup();
 
-    for mutable in &mutable_paths {
-        if let Some(protected) = protected_paths
-            .iter()
-            .find(|protected| mutable.is_within(protected))
-        {
-            return Err(ManifestError::MutableProtected {
-                mutable: mutable.as_str().to_owned(),
-                protected: protected.as_str().to_owned(),
-            });
+    MutationBoundary::new(mutable_paths, protected_paths).map_err(|error| match error {
+        MutationBoundaryError::EmptyMutablePaths => ManifestError::Blank {
+            field: "scope.mutable_paths".into(),
+        },
+        MutationBoundaryError::MutableProtected { mutable, protected } => {
+            ManifestError::MutableProtected { mutable, protected }
         }
-    }
+    })
+}
 
-    Ok(Scope {
-        mutable_paths,
-        protected_paths,
+fn parse_repo_path(path: String) -> Result<RepoPath, ManifestError> {
+    RepoPath::new(path).map_err(|error| ManifestError::UnsafePath {
+        path: error.path().to_owned(),
+        reason: error.reason(),
     })
 }
 
