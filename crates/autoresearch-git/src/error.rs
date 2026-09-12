@@ -130,6 +130,49 @@ pub enum GitError {
         /// Worktree holding branch.
         worktree: PathBuf,
     },
+    /// Supplied run value belongs to another adapter or frozen base.
+    #[error("run workspace does not belong to locked repository")]
+    ForeignRunWorkspace,
+    /// Retained ref moved or disappeared after run value was opened.
+    #[error("run branch changed: expected `{expected}`, found `{actual}`")]
+    StaleRunBranch {
+        /// Commit expected by caller's run value.
+        expected: String,
+        /// Current commit or explicit missing marker.
+        actual: String,
+    },
+    /// Candidate path already exists and cannot be overwritten.
+    #[error("candidate worktree path already exists: {}", .0.display())]
+    WorktreePathExists(PathBuf),
+    /// Candidate worktree parent or target could escape through unsafe path shape.
+    #[error("unsafe worktree path {}: {reason}", path.display())]
+    UnsafeWorktreePath {
+        /// Unsafe path.
+        path: PathBuf,
+        /// Stable refusal reason.
+        reason: &'static str,
+    },
+    /// Candidate value was not produced for supplied run and adapter.
+    #[error("candidate workspace does not belong to supplied run")]
+    ForeignCandidateWorkspace,
+    /// Candidate is attached to a branch instead of detached commit.
+    #[error("candidate worktree is attached to branch `{branch}`")]
+    CandidateNotDetached {
+        /// Checked-out branch ref.
+        branch: String,
+    },
+    /// Candidate contains staged, tracked, or untracked changes.
+    #[error("candidate worktree must be clean before retention: {status}")]
+    DirtyCandidate {
+        /// Bounded porcelain status.
+        status: String,
+    },
+    /// Candidate commit is not one direct non-merge child of retained head.
+    #[error("candidate commit topology invalid: {detail}")]
+    CandidateTopology {
+        /// Bounded topology diagnostic.
+        detail: String,
+    },
     /// Lock filesystem operation failed.
     #[error("failed to {operation} at {}: {source}", path.display())]
     LockIo {
