@@ -1,0 +1,58 @@
+schema_version = 1
+
+[experiment]
+name = "local performance loop"
+[experiment.objective]
+name = "lcp_ms"
+direction = "minimize"
+[experiment.budget]
+max_candidates = 2
+max_failures = 1
+wall_clock_seconds = 180
+
+[scope]
+mutable_paths = ["apps/web/src", "apps/web/public"]
+protected_paths = ["autoresearch.toml", "program.md", "docs/BET.md", "tests/performance"]
+
+[agent]
+program = "manual"
+timeout_seconds = 30
+
+[[evaluators]]
+id = "perf_browser_v1"
+hard_gates = ["browser_viewport_exact", "browser_no_overflow", "browser_controls_named", "browser_local_only", "browser_motion_setting", "browser_route_status"]
+[evaluators.command]
+program = "autoresearch-web-evaluator"
+args = ["--route", "home", "--manifest", "autoresearch.toml"]
+timeout_seconds = 45
+
+[[evaluators]]
+id = "perf_lighthouse_v1"
+hard_gates = ["accessibility_floor", "layout_stability_floor"]
+[evaluators.command]
+program = "REPLACE_WITH_LOCAL_LIGHTHOUSE_JSONL_EVALUATOR"
+args = ["--adapter-version", "1"]
+timeout_seconds = 75
+[[evaluators.metrics]]
+name = "lcp_ms"
+kind = "objective"
+direction = "minimize"
+
+[web]
+origin = "http://127.0.0.1:4402"
+viewports = [320, 390, 768, 1280]
+reduced_motion = true
+[[web.routes]]
+name = "home"
+path = "/"
+expected_status = 200
+[web.thresholds]
+max_lcp_ms = 2500
+max_cls_milli = 100
+min_accessibility_score = 90
+[web.lighthouse]
+version = "fixture-lighthouse-v1"
+environment_fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+warmup_samples = 1
+measured_samples = 3
+fields = ["performance", "accessibility", "best_practices", "seo", "fcp_ms", "lcp_ms", "cls", "tbt_ms"]
