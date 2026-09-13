@@ -1,174 +1,55 @@
-# autoresearch
+# autoresearch-rs
 
-> **Rust fork status:** Rust workspace ships validated experiment contracts,
-> deterministic candidate policy, frozen input identities, crash-recovery
-> journal model, Git candidate-worktree lifecycle, and evaluator SDK (native
-> contract, JSONL v1 subprocess protocol, command/Cargo gates, exact-commit
-> diff evidence). Product-web crate adds local browser and bounded accessibility
-> checks, frozen Lighthouse report import, local SEO/GEO diagnostics, and an
-> explicit-authority read-only HTTPS probe. CLI ships `init`, `doctor`,
-> exact-commit `baseline`, one-candidate-at-a-time `run`, journal `resume`,
-> read-only `status`, independent kept-commit `verify`, and stable-boundary
-> `stop`. Versioned journal-backed JSON report and standalone offline HTML
-> board and bounded redacted local export now ship. This is the first usable
-> Rust product-research loop, not autonomous research orchestration. Original
-> Python implementation remains below and runnable unchanged.
+Rust experiment engine for frozen, falsifiable product and training research.
+This fork retains upstream Python source and history in
+[`reference/python`](reference/python/README.md). Provenance and invocation:
+[`reference/python/MANIFEST.md`](reference/python/MANIFEST.md).
 
-## Rust foundation quick start
+## First usable Rust loop
+
+Workspace ships frozen contracts, isolated Git candidate worktrees, bounded
+serial manual or explicitly allowlisted command mutations, exact-commit
+evaluation, journal recovery, independent kept-commit verification, and
+versioned JSON/HTML reports with bounded redacted local export. Product Web
+adapters cover local Chromium routes, bounded accessibility evidence, SEO/GEO
+diagnostics, frozen Lighthouse report import, and permission-gated read-only
+production probes. This is not autonomous orchestration or proof of customer
+demand, rankings, AI citations, WCAG AA conformance, or product-bet promotion.
 
 ```bash
 cargo run -p autoresearch-cli -- --help
-cargo run -p autoresearch-cli -- --repository /path/to/repository init
-# Review and commit autoresearch.toml, program.md, and .gitignore change:
-# .autoresearch/
-cargo run -p autoresearch-cli -- --repository /path/to/repository doctor
-cargo run -p autoresearch-cli -- --repository /path/to/repository baseline
-# Use run_id returned by baseline. First manual call prepares isolated worktree.
-cargo run -p autoresearch-cli -- --repository /path/to/repository run --run-id RUN_ID --mode manual
-# Edit only declared mutable paths in reported worktree, then submit:
-cargo run -p autoresearch-cli -- --repository /path/to/repository run --run-id RUN_ID --mode manual --hypothesis "one falsifiable change"
-cargo run -p autoresearch-cli -- --repository /path/to/repository status --run-id RUN_ID
-cargo run -p autoresearch-cli -- --repository /path/to/repository resume --run-id RUN_ID
-cargo run -p autoresearch-cli -- --repository /path/to/repository verify --run-id RUN_ID
-cargo run -p autoresearch-cli -- --repository /path/to/repository report --run-id RUN_ID
-cargo run -p autoresearch-cli -- --repository /path/to/repository report --run-id RUN_ID --html
-cargo run -p autoresearch-cli -- --repository /path/to/repository export --run-id RUN_ID --export-root /absolute/existing/review-dir
+cargo run -p autoresearch-cli -- --repository /path/to/product init
+# Review and commit autoresearch.toml, program.md, and .gitignore before baseline.
+cargo run -p autoresearch-cli -- --repository /path/to/product doctor
+cargo run -p autoresearch-cli -- --repository /path/to/product baseline
+cargo run -p autoresearch-cli -- --repository /path/to/product run --run-id RUN_ID --mode manual
+# Edit only declared mutable paths in reported isolated worktree.
+cargo run -p autoresearch-cli -- --repository /path/to/product run --run-id RUN_ID --mode manual --hypothesis "one falsifiable change"
+cargo run -p autoresearch-cli -- --repository /path/to/product status --run-id RUN_ID
+cargo run -p autoresearch-cli -- --repository /path/to/product resume --run-id RUN_ID
+cargo run -p autoresearch-cli -- --repository /path/to/product verify --run-id RUN_ID
+cargo run -p autoresearch-cli -- --repository /path/to/product report --run-id RUN_ID --html
+cargo run -p autoresearch-cli -- --repository /path/to/product export --run-id RUN_ID --export-root /absolute/existing/review-dir
 ```
 
-`init` never overwrites existing contract files. `doctor` is read-only and does
-not execute configured agents or evaluators. `baseline` requires clean, tracked
-control inputs, freezes identity under ignored `.autoresearch/`, then executes
-only declared evaluators in an exact-commit isolated worktree. A failed
-evaluator returns exit code 5 and typed failure, not a score. `run` rejects a
-changed caller HEAD or dirty caller checkout and never edits caller files.
-Manual mode stages changes only in the reported candidate worktree. Command
-mode additionally requires `--allow-executable` matching the frozen absolute
-agent binary and refuses external authority without a separate sandbox.
-Template `git diff` evaluator is a schema example, not JSONL evidence; replace
-it with a declared evaluator before expecting a successful baseline.
-`resume` follows exact journal recovery and refuses divergent refs. `status`
-never mutates run state. `verify` requires a finalized kept candidate, reruns
-frozen evaluators in an isolated worktree, and writes a separate verification
-record containing original selection and fresh evidence. It does not reselect
-or move retained ref. `stop` records operator cancellation only between
-candidates; active candidate needs inspection or completion first.
-`report` rebuilds versioned JSON from validated frozen source and journal;
-`--html` emits a script-free evidence board to stdout. See
-[`docs/evidence-board.md`](docs/evidence-board.md) for provenance and
-accessibility limits. `export` writes a new redacted bundle outside the
-product checkout and copies only explicitly selected, declared artifacts.
+`init` preserves existing files. `doctor` does not execute agents/evaluators.
+`baseline` freezes clean, tracked control inputs and evaluates exact commit.
+`run` never edits caller checkout. Manual mode submits changes from reported
+worktree; command mode needs matching frozen executable plus explicit
+`--allow-executable`. `resume` follows journal state and refuses ambiguous Git
+effects. `verify` reruns frozen evaluators without reselecting. `report` is
+read-only; `export` creates new bundle outside product checkout and copies only
+explicitly selected, report-declared artifacts. Neither command deploys,
+publishes, contacts customers, collects payment, or moves product gates.
 
-First usable loop is covered by a disposable product-page CLI fixture:
-baseline, isolated manual improvement, retained exact commit, higher-scoring
-failed-CTA-gate regression, recovery after candidate commit, independent
-verification, report, and export. Fixture objective counts page content items;
-it is not a live quality score. Separate Product Web pack exercises Chromium,
-accessibility, SEO/GEO, and frozen Lighthouse-import contracts. Neither fixture
-proves customer demand, ranking, WCAG AA conformance, or commercial validation.
-No default network write, deployment, outreach, payment, or gate movement exists.
+Disposable product-page CLI fixture covers baseline, kept improvement,
+higher-scoring failed-CTA-gate discard after simulated post-commit crash,
+recovery, verify, report, and export. Its objective counts content items, not
+live page quality. Separate [offline Product Web pack](examples/product-web/README.md)
+exercises Chromium and source-backed adapters; Lighthouse samples there are
+synthetic import fixtures.
 
-Architecture and safety decisions: [`docs/plans/2026-09-11-autoresearch-rust-platform-design.md`](docs/plans/2026-09-11-autoresearch-rust-platform-design.md).
-
-Evaluator SDK contract and runnable examples:
-[`docs/evaluator-protocol.md`](docs/evaluator-protocol.md) and
-[`docs/evaluator-examples.md`](docs/evaluator-examples.md). These examples show
-one invocation only; they are not an automated product experiment.
-
-Offline product-web pack and limits:
-[`examples/product-web/README.md`](examples/product-web/README.md). Its
-Lighthouse samples are synthetic import fixtures, not live performance data;
-SEO/GEO output and accessibility samples cannot prove ranking, AI citations,
-WCAG AA conformance, customer demand, or a product bet gate.
-
-## Original upstream implementation
-
-![teaser](progress.png)
-
-*One day, frontier AI research used to be done by meat computers in between eating, sleeping, having other fun, and synchronizing once in a while using sound wave interconnect in the ritual of "group meeting". That era is long gone. Research is now entirely the domain of autonomous swarms of AI agents running across compute cluster megastructures in the skies. The agents claim that we are now in the 10,205th generation of the code base, in any case no one could tell if that's right or wrong as the "code" is now a self-modifying binary that has grown beyond human comprehension. This repo is the story of how it all began. -@karpathy, March 2026*.
-
-The idea: give an AI agent a small but real LLM training setup and let it experiment autonomously overnight. It modifies the code, trains for 5 minutes, checks if the result improved, keeps or discards, and repeats. You wake up in the morning to a log of experiments and (hopefully) a better model. The training code here is a simplified single-GPU implementation of [nanochat](https://github.com/karpathy/nanochat). The core idea is that you're not touching any of the Python files like you normally would as a researcher. Instead, you are programming the `program.md` Markdown files that provide context to the AI agents and set up your autonomous research org. The default `program.md` in this repo is intentionally kept as a bare bones baseline, though it's obvious how one would iterate on it over time to find the "research org code" that achieves the fastest research progress, how you'd add more agents to the mix, etc. A bit more context on this project is here in this [tweet](https://x.com/karpathy/status/2029701092347630069) and [this tweet](https://x.com/karpathy/status/2031135152349524125).
-
-## How it works
-
-The repo is deliberately kept small and only really has three files that matter:
-
-- **`prepare.py`** — fixed constants, one-time data prep (downloads training data, trains a BPE tokenizer), and runtime utilities (dataloader, evaluation). Not modified.
-- **`train.py`** — the single file the agent edits. Contains the full GPT model, optimizer (Muon + AdamW), and training loop. Everything is fair game: architecture, hyperparameters, optimizer, batch size, etc. **This file is edited and iterated on by the agent**.
-- **`program.md`** — baseline instructions for one agent. Point your agent here and let it go. **This file is edited and iterated on by the human**.
-
-By design, training runs for a **fixed 5-minute time budget** (wall clock, excluding startup/compilation), regardless of the details of your compute. The metric is **val_bpb** (validation bits per byte) — lower is better, and vocab-size-independent so architectural changes are fairly compared.
-
-If you are new to neural networks, this ["Dummy's Guide"](https://x.com/hooeem/status/2030720614752039185) looks pretty good for a lot more context.
-
-## Quick start
-
-**Requirements:** A single NVIDIA GPU (tested on H100), Python 3.10+, [uv](https://docs.astral.sh/uv/).
-
-```bash
-
-# 1. Install uv project manager (if you don't already have it)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. Install dependencies
-uv sync
-
-# 3. Download data and train tokenizer (one-time, ~2 min)
-uv run prepare.py
-
-# 4. Manually run a single training experiment (~5 min)
-uv run train.py
-```
-
-If the above commands all work ok, your setup is working and you can go into autonomous research mode.
-
-## Running the agent
-
-Simply spin up your Claude/Codex or whatever you want in this repo (and disable all permissions), then you can prompt something like:
-
-```
-Hi have a look at program.md and let's kick off a new experiment! let's do the setup first.
-```
-
-The `program.md` file is essentially a super lightweight "skill".
-
-## Project structure
-
-```
-prepare.py      — constants, data prep + runtime utilities (do not modify)
-train.py        — model, optimizer, training loop (agent modifies this)
-program.md      — agent instructions
-pyproject.toml  — dependencies
-```
-
-## Design choices
-
-- **Single file to modify.** The agent only touches `train.py`. This keeps the scope manageable and diffs reviewable.
-- **Fixed time budget.** Training always runs for exactly 5 minutes, regardless of your specific platform. This means you can expect approx 12 experiments/hour and approx 100 experiments while you sleep. There are two upsides of this design decision. First, this makes experiments directly comparable regardless of what the agent changes (model size, batch size, architecture, etc). Second, this means that autoresearch will find the most optimal model for your platform in that time budget. The downside is that your runs (and results) become not comparable to other people running on other compute platforms.
-- **Self-contained.** No external dependencies beyond PyTorch and a few small packages. No distributed training, no complex configs. One GPU, one file, one metric.
-
-## Platform support
-
-This code currently requires that you have a single NVIDIA GPU. In principle it is quite possible to support CPU, MPS and other platforms but this would also bloat the code. I'm not 100% sure that I want to take this on personally right now. People can reference (or have their agents reference) the full/parent nanochat repository that has wider platform support and shows the various solutions (e.g. a Flash Attention 3 kernels fallback implementation, generic device support, autodetection, etc.), feel free to create forks or discussions for other platforms and I'm happy to link to them here in the README in some new notable forks section or etc.
-
-Seeing as there seems to be a lot of interest in tinkering with autoresearch on much smaller compute platforms than an H100, a few extra words. If you're going to try running autoresearch on smaller computers (Macbooks etc.), I'd recommend one of the forks below. On top of this, here are some recommendations for how to tune the defaults for much smaller models for aspiring forks:
-
-1. To get half-decent results I'd use a dataset with a lot less entropy, e.g. this [TinyStories dataset](https://huggingface.co/datasets/karpathy/tinystories-gpt4-clean). These are GPT-4 generated short stories. Because the data is a lot narrower in scope, you will see reasonable results with a lot smaller models (if you try to sample from them after training).
-2. You might experiment with decreasing `vocab_size`, e.g. from 8192 down to 4096, 2048, 1024, or even - simply byte-level tokenizer with 256 possibly bytes after utf-8 encoding.
-3. In `prepare.py`, you'll want to lower `MAX_SEQ_LEN` a lot, depending on the computer even down to 256 etc. As you lower `MAX_SEQ_LEN`, you may want to experiment with increasing `DEVICE_BATCH_SIZE` in `train.py` slightly to compensate. The number of tokens per fwd/bwd pass is the product of these two.
-4. Also in `prepare.py`, you'll want to decrease `EVAL_TOKENS` so that your validation loss is evaluated on a lot less data.
-5. In `train.py`, the primary single knob that controls model complexity is the `DEPTH` (default 8, here). A lot of variables are just functions of this, so e.g. lower it down to e.g. 4.
-6. You'll want to most likely use `WINDOW_PATTERN` of just "L", because "SSSL" uses alternating banded attention pattern that may be very inefficient for you. Try it.
-7. You'll want to lower `TOTAL_BATCH_SIZE` a lot, but keep it powers of 2, e.g. down to `2**14` (~16K) or so even, hard to tell.
-
-I think these would be the reasonable hyperparameters to play with. Ask your favorite coding agent for help and copy paste them this guide, as well as the full source code.
-
-## Notable forks
-
-- [miolini/autoresearch-macos](https://github.com/miolini/autoresearch-macos) (MacOS)
-- [trevin-creator/autoresearch-mlx](https://github.com/trevin-creator/autoresearch-mlx) (MacOS)
-- [jsegov/autoresearch-win-rtx](https://github.com/jsegov/autoresearch-win-rtx) (Windows)
-- [andyluo7/autoresearch](https://github.com/andyluo7/autoresearch) (AMD)
-
-## License
-
-MIT
+Details: [architecture](docs/plans/2026-09-11-autoresearch-rust-platform-design.md),
+[evaluator protocol](docs/evaluator-protocol.md),
+[evaluator examples](docs/evaluator-examples.md),
+[evidence board and export](docs/evidence-board.md).
