@@ -6,3 +6,4 @@ server with `cargo run -p autoresearch-product-web --example product_web_fixture
 It binds only `127.0.0.1:4419`; stop with Ctrl-C. Frozen route/viewport settings
 live in `autoresearch.toml`. Lab checks here cannot establish product demand or
 change any product bet gate.
+`/robots.txt` and `/sitemap.xml` are declared technical SEO fixture paths.

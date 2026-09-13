@@ -30,3 +30,12 @@ raw samples remain in evidence. Category scores use 0–100; FCP/LCP/TBT use
 milliseconds; CLS remains unitless. INP is deliberately absent from this lab
 adapter. No Lighthouse binary is bundled or silently substituted with another
 score; missing tool means unavailable live measurement.
+
+Technical SEO probing is local-only. `[web.seo]` freezes robots and sitemap
+paths plus redirect bound; each route declares expected HTTP status and whether
+it should be indexable. The adapter checks canonical, noindex, sitemap entry,
+robots sitemap declaration, JSON-LD syntax, and declared redirect chains. Each
+issue carries exact route, URL, rule, and run-owned JSON artifact. It does not
+claim Google indexation, rankings, AI citation, or traffic. Remote production
+checks are unsupported until a separate read-only origin allowlist is designed;
+off-origin and undeclared redirects are rejected before a second request.

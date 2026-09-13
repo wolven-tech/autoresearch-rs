@@ -288,6 +288,7 @@ pub struct WebTargets {
     reduced_motion: bool,
     thresholds: WebThresholds,
     lighthouse: Option<LighthouseSettings>,
+    seo: Option<SeoSettings>,
 }
 
 impl WebTargets {
@@ -325,6 +326,40 @@ impl WebTargets {
     #[must_use]
     pub const fn lighthouse(&self) -> Option<&LighthouseSettings> {
         self.lighthouse.as_ref()
+    }
+
+    /// Returns optional frozen technical SEO policy.
+    #[must_use]
+    pub const fn seo(&self) -> Option<&SeoSettings> {
+        self.seo.as_ref()
+    }
+}
+
+/// Frozen local sitemap/robots paths and redirect bound.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SeoSettings {
+    sitemap_path: String,
+    robots_path: String,
+    max_redirects: u8,
+}
+
+impl SeoSettings {
+    /// Returns declared sitemap path.
+    #[must_use]
+    pub fn sitemap_path(&self) -> &str {
+        &self.sitemap_path
+    }
+
+    /// Returns declared robots path.
+    #[must_use]
+    pub fn robots_path(&self) -> &str {
+        &self.robots_path
+    }
+
+    /// Returns maximum followed redirect hops.
+    #[must_use]
+    pub const fn max_redirects(&self) -> u8 {
+        self.max_redirects
     }
 }
 
@@ -376,6 +411,7 @@ pub struct WebRoute {
     name: String,
     path: String,
     expected_status: u16,
+    indexable: bool,
 }
 
 impl WebRoute {
@@ -395,6 +431,12 @@ impl WebRoute {
     #[must_use]
     pub const fn expected_status(&self) -> u16 {
         self.expected_status
+    }
+
+    /// Returns whether route is expected to be indexable.
+    #[must_use]
+    pub const fn indexable(&self) -> bool {
+        self.indexable
     }
 }
 
@@ -501,6 +543,16 @@ struct RawWebTargets {
     thresholds: WebThresholds,
     #[serde(default)]
     lighthouse: Option<RawLighthouseSettings>,
+    #[serde(default)]
+    seo: Option<RawSeoSettings>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSeoSettings {
+    sitemap_path: String,
+    robots_path: String,
+    max_redirects: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -519,6 +571,8 @@ struct RawWebRoute {
     name: String,
     path: String,
     expected_status: u16,
+    #[serde(default)]
+    indexable: Option<bool>,
 }
 
 const fn default_reduced_motion() -> bool {
@@ -706,7 +760,40 @@ fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError>
             reason: "must be exactly [320, 390, 768, 1280] in ascending order",
         });
     }
-    if raw.routes.is_empty() {
+    let routes = validate_web_routes(raw.routes)?;
+    if raw.thresholds.max_lcp_ms == Some(0)
+        || raw
+            .thresholds
+            .max_cls_milli
+            .is_some_and(|value| value > 1000)
+        || raw
+            .thresholds
+            .min_accessibility_score
+            .is_some_and(|value| value > 100)
+    {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.thresholds".into(),
+            reason: "threshold is outside supported range",
+        });
+    }
+    let lighthouse = raw
+        .lighthouse
+        .map(validate_lighthouse_settings)
+        .transpose()?;
+    let seo = raw.seo.map(validate_seo_settings).transpose()?;
+    Ok(WebTargets {
+        origin: origin.origin().ascii_serialization(),
+        routes,
+        viewports: raw.viewports,
+        reduced_motion: raw.reduced_motion,
+        thresholds: raw.thresholds,
+        lighthouse,
+        seo,
+    })
+}
+
+fn validate_web_routes(raw_routes: Vec<RawWebRoute>) -> Result<Vec<WebRoute>, ManifestError> {
+    if raw_routes.is_empty() {
         return Err(ManifestError::InvalidWebTarget {
             field: "web.routes".into(),
             reason: "at least one route is required",
@@ -714,8 +801,8 @@ fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError>
     }
     let mut names = HashSet::new();
     let mut paths = HashSet::new();
-    let mut routes = Vec::with_capacity(raw.routes.len());
-    for (index, route) in raw.routes.into_iter().enumerate() {
+    let mut routes = Vec::with_capacity(raw_routes.len());
+    for (index, route) in raw_routes.into_iter().enumerate() {
         let name = nonblank(route.name, &format!("web.routes[{index}].name"))?;
         if !names.insert(name.clone()) {
             return Err(ManifestError::Duplicate {
@@ -745,35 +832,28 @@ fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError>
             name,
             path: route.path,
             expected_status: route.expected_status,
+            indexable: route.indexable.unwrap_or(route.expected_status == 200),
         });
     }
     routes.sort_by(|left, right| left.name.cmp(&right.name));
-    if raw.thresholds.max_lcp_ms == Some(0)
-        || raw
-            .thresholds
-            .max_cls_milli
-            .is_some_and(|value| value > 1000)
-        || raw
-            .thresholds
-            .min_accessibility_score
-            .is_some_and(|value| value > 100)
+    Ok(routes)
+}
+
+fn validate_seo_settings(raw: RawSeoSettings) -> Result<SeoSettings, ManifestError> {
+    if !valid_web_route_path(&raw.sitemap_path)
+        || !valid_web_route_path(&raw.robots_path)
+        || raw.sitemap_path == raw.robots_path
+        || raw.max_redirects > 5
     {
         return Err(ManifestError::InvalidWebTarget {
-            field: "web.thresholds".into(),
-            reason: "threshold is outside supported range",
+            field: "web.seo".into(),
+            reason: "requires distinct safe paths and at most five redirects",
         });
     }
-    let lighthouse = raw
-        .lighthouse
-        .map(validate_lighthouse_settings)
-        .transpose()?;
-    Ok(WebTargets {
-        origin: origin.origin().ascii_serialization(),
-        routes,
-        viewports: raw.viewports,
-        reduced_motion: raw.reduced_motion,
-        thresholds: raw.thresholds,
-        lighthouse,
+    Ok(SeoSettings {
+        sitemap_path: raw.sitemap_path,
+        robots_path: raw.robots_path,
+        max_redirects: raw.max_redirects,
     })
 }
 
@@ -1049,6 +1129,13 @@ measured_samples = 3
 fields = ["performance", "accessibility", "best_practices", "seo", "fcp_ms", "lcp_ms", "cls", "tbt_ms"]
 "#;
 
+    const SEO: &str = r#"
+[web.seo]
+robots_path = "/robots.txt"
+sitemap_path = "/sitemap.xml"
+max_redirects = 2
+"#;
+
     #[test]
     fn manifest_parses_and_adds_control_paths() {
         let manifest = ValidatedManifest::parse(VALID).expect("valid manifest");
@@ -1150,6 +1237,40 @@ fields = ["performance", "accessibility", "best_practices", "seo", "fcp_ms", "lc
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "not-a-hash",
             ),
+        ] {
+            assert!(ValidatedManifest::parse(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn seo_policy_is_frozen_and_rejects_unsafe_paths() {
+        let source = format!("{VALID}{WEB}{SEO}");
+        let manifest = ValidatedManifest::parse(&source).expect("SEO policy");
+        let policy = manifest.web().expect("web").seo().expect("seo");
+        assert_eq!(policy.robots_path(), "/robots.txt");
+        assert_eq!(policy.sitemap_path(), "/sitemap.xml");
+        assert_eq!(policy.max_redirects(), 2);
+        assert!(!manifest.web().expect("web").routes()[2].indexable());
+        let baseline = FrozenIdentity::capture(&manifest, b"program", &BTreeMap::new(), None)
+            .expect("baseline identity");
+        for changed in [
+            source.replace("max_redirects = 2", "max_redirects = 3"),
+            source.replace(
+                "path = \"/metadata\"",
+                "path = \"/metadata\"\nindexable = false",
+            ),
+        ] {
+            let changed_manifest = ValidatedManifest::parse(&changed).expect("changed SEO policy");
+            let changed_identity =
+                FrozenIdentity::capture(&changed_manifest, b"program", &BTreeMap::new(), None)
+                    .expect("changed identity");
+            assert_ne!(baseline.aggregate_sha256, changed_identity.aggregate_sha256);
+        }
+        for invalid in [
+            source.replace("max_redirects = 2", "max_redirects = 6"),
+            source.replace("/robots.txt", "../robots.txt"),
+            source.replace("/sitemap.xml", "https://example.com/sitemap.xml"),
+            source.replace("/sitemap.xml", "/robots.txt"),
         ] {
             assert!(ValidatedManifest::parse(&invalid).is_err());
         }

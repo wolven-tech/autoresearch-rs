@@ -53,8 +53,14 @@ expected_status = 200
 name = "missing"
 path = "/missing"
 expected_status = 404
+indexable = false
 
 [web.thresholds]
 max_lcp_ms = 2500
 max_cls_milli = 100
 min_accessibility_score = 90
+
+[web.seo]
+sitemap_path = "/sitemap.xml"
+robots_path = "/robots.txt"
+max_redirects = 2
