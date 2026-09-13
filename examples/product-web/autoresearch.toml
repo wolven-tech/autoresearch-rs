@@ -26,6 +26,7 @@ hard_gates = ["browser_viewport_exact", "browser_no_overflow", "browser_controls
 
 [evaluators.command]
 program = "autoresearch-web-evaluator"
+args = ["--route", "home", "--manifest", "examples/product-web/autoresearch.toml"]
 timeout_seconds = 60
 
 [[evaluators.metrics]]

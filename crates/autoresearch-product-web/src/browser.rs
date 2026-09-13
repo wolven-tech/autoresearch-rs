@@ -3,7 +3,8 @@
 use autoresearch_config::ValidatedManifest;
 use autoresearch_core::{GateOutcome, Measurement};
 use autoresearch_evaluator::{
-    Artifact, EvaluationContext, EvaluatorOutput, OutputError, ValidatedOutput, validate_output,
+    Artifact, EvaluationContext, EvaluatorOutput, Observation, OutputError, ValidatedOutput,
+    validate_output,
 };
 use headless_chrome::{
     Browser, LaunchOptions,
@@ -110,11 +111,12 @@ pub struct BrowserEvidence {
     pub viewports: Vec<ViewportEvidence>,
 }
 
-/// Converts rendered evidence into four declared hard gates and screenshots.
+/// Converts rendered evidence into declared hard gates and screenshots.
 ///
 /// Gate names are `browser_viewport_exact`, `browser_no_overflow`,
-/// `browser_controls_named`, and `browser_local_only`. These checks are
-/// deliberately narrower than WCAG AA, Lighthouse, SEO, or market evidence.
+/// `browser_controls_named`, and `browser_local_only`; manifest routes also
+/// emit `browser_route_status`. These checks are deliberately narrower than
+/// WCAG AA, Lighthouse, SEO, or market evidence.
 /// Frozen manifest must declare these exact names before a snapshot can be
 /// built. Blocked external requests fail local-only gate even though fetch
 /// interception prevented dispatch.
@@ -128,6 +130,20 @@ pub fn browser_output(
     evaluator_id: &str,
     evidence: &BrowserEvidence,
 ) -> Result<ValidatedOutput, OutputError> {
+    validate_output(
+        context,
+        evaluator_id,
+        browser_payload(context, evaluator_id, evidence),
+    )
+}
+
+/// Builds one untrusted browser envelope for shared native/process validation.
+#[must_use]
+pub fn browser_payload(
+    context: &EvaluationContext,
+    evaluator_id: &str,
+    evidence: &BrowserEvidence,
+) -> EvaluatorOutput {
     let mut gates = vec![
         (
             "browser_viewport_exact",
@@ -183,20 +199,32 @@ pub fn browser_output(
             media_type: "image/png".into(),
         })
         .collect();
-    validate_output(
-        context,
-        evaluator_id,
-        EvaluatorOutput {
-            evaluator_id: evaluator_id.into(),
-            run_id: context.run_id().to_string(),
-            baseline_commit: context.baseline_commit().to_string(),
-            evaluated_commit: context.evaluated_commit().to_string(),
-            measurements,
-            observations: vec![],
-            artifacts,
-            warnings: vec![],
-        },
-    )
+    let observations = evidence
+        .viewports
+        .iter()
+        .map(|viewport| Observation {
+            code: format!("browser_viewport_{}", viewport.requested_width),
+            detail: format!(
+                "http_status={:?}; console_errors={}; runtime_exceptions={}; log_errors={}; observed_width={}; document_width={}",
+                viewport.http_status,
+                viewport.console_errors,
+                viewport.runtime_exceptions,
+                viewport.log_errors,
+                viewport.observed_width,
+                viewport.document_width
+            ),
+        })
+        .collect();
+    EvaluatorOutput {
+        evaluator_id: evaluator_id.into(),
+        run_id: context.run_id().to_string(),
+        baseline_commit: context.baseline_commit().to_string(),
+        evaluated_commit: context.evaluated_commit().to_string(),
+        measurements,
+        observations,
+        artifacts,
+        warnings: vec![],
+    }
 }
 
 #[derive(Debug, Deserialize)]

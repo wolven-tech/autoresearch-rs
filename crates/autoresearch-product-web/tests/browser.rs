@@ -153,6 +153,10 @@ fn rendered_local_page_records_real_viewport_and_screenshot() {
         browser_output(&fixture.context, "browser", &evidence).expect("valid browser output");
     assert_eq!(output.measurements().len(), 4);
     assert_eq!(output.artifacts().len(), 4);
+    assert!(output.measurements().iter().any(|measurement| {
+        matches!(measurement, Measurement::HardGate { name, outcome }
+            if name == "browser_local_only" && !outcome.passed())
+    }));
     for (viewport, expected_width) in evidence.viewports.iter().zip([320, 390, 768, 1280]) {
         assert_eq!(viewport.requested_width, expected_width);
         assert_eq!(viewport.observed_width, expected_width);
@@ -246,4 +250,30 @@ fn declared_route_records_http_status_console_errors_and_frozen_name() {
         inspect_declared_route(&fixture.context, &manifest, "home", "/nonexistent".as_ref()),
         Err(BrowserError::ChromiumUnavailable)
     ));
+}
+
+#[test]
+fn unreachable_declared_route_cannot_pass_http_gate() {
+    let Some(chromium) = chromium() else {
+        return;
+    };
+    let closed = TcpListener::bind("127.0.0.1:0").expect("temporary listener");
+    let port = closed.local_addr().expect("address").port();
+    drop(closed);
+    let source = include_str!("../../../examples/product-web/autoresearch.toml")
+        .replace("127.0.0.1:4419", &format!("127.0.0.1:{port}"));
+    let manifest = ValidatedManifest::parse(&source).expect("manifest");
+    let fixture = Fixture::new();
+    match inspect_declared_route(&fixture.context, &manifest, "home", &chromium) {
+        Err(BrowserError::Navigation | BrowserError::Inspection) => {}
+        Ok(evidence) => {
+            let output = browser_output(&fixture.context, "browser", &evidence)
+                .expect("typed failed status gate");
+            assert!(output.measurements().iter().any(|measurement| {
+                matches!(measurement, Measurement::HardGate { name, outcome }
+                    if name == "browser_route_status" && !outcome.passed())
+            }));
+        }
+        Err(error) => panic!("unexpected navigation classification: {error}"),
+    }
 }
