@@ -6,9 +6,11 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+mod checkpoint;
 mod measure;
 mod model;
 mod train;
+pub use checkpoint::{CheckpointError, CheckpointStore, SgdState};
 pub use measure::{
     MeasureFailure, RunDiagnostics, ValidationEvidence, ValidationObjective,
     environment_fingerprint, measure_validation,

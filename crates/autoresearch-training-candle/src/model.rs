@@ -3,10 +3,11 @@
 use crate::{PrecisionRequest, TinyCorpus, TrainingError, resolve_precision};
 use candle_core::{DType, Device, Tensor, Var};
 use candle_nn::{Embedding, LayerNorm, Linear, Module, loss, ops};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Explicit tiny transformer shape and deterministic initialization seed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TinyModelConfig {
     /// Byte tokens plus BOS.
     pub vocab_size: usize,

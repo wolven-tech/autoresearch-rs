@@ -37,3 +37,13 @@ memory sit under `diagnostics`. Exact training trace is attached. A changed
 environment fingerprint, missing sample, or nonfinite loss returns an error
 without metric. This byte-level objective must not be compared directly with
 upstream BPE validation scores.
+
+`CheckpointStore` creates one exclusive run-owned directory beneath an
+existing artifact root. Immutable `checkpoint-step-N.json` files include
+schema, shape, CPU/f32, ordered f32 parameters, stateless SGD learning rate,
+fixture-contract SHA, step, and seed under a payload SHA. Save uses
+`create_new`; load verifies size, marker, digest, provenance, parameter names,
+shapes, and finite values before changing model state. Stable symlinks and
+future schemas fail closed. Fixture test verifies resumed next-step logits
+exactly and loss within 1e-6 of uninterrupted two-step run. This checkpoint
+does not imply portable optimizer-state parity with upstream AdamW.
