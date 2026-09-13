@@ -9,7 +9,10 @@ use autoresearch_core::{
 };
 use autoresearch_evaluator::CancellationToken;
 use autoresearch_market::{ImportError, MarketEvidenceLedger, import_receipts};
-use autoresearch_report::{BoardError, ReportError, RunReportV1, build_report, render_board};
+use autoresearch_report::{
+    BoardError, ExportError, ExportResult, ReportError, RunReportV1, build_report, export_bundle,
+    render_board,
+};
 use autoresearch_runner::{
     BaselineCapture, ResumeOutcome, RunMutationMode, RunStatus, RunStep, RunnerError,
     SubprocessBaselineExecutor, VerificationEvidence, advance_run_once, capture_existing_baseline,
@@ -96,6 +99,24 @@ enum Action {
         #[arg(long)]
         html: bool,
     },
+    /// Create new local redacted bundle outside target repository.
+    Export {
+        /// Existing frozen run identifier.
+        #[arg(long)]
+        run_id: String,
+        /// Existing absolute directory outside target repository.
+        #[arg(long)]
+        export_root: PathBuf,
+        /// Declared run-owned relative artifact path to include. Repeat as needed.
+        #[arg(long)]
+        artifact: Vec<PathBuf>,
+        /// Root containing operator-selected commercial receipt sidecars.
+        #[arg(long)]
+        evidence_root: Option<PathBuf>,
+        /// Relative commercial receipt sidecar under evidence root.
+        #[arg(long)]
+        receipt: Vec<PathBuf>,
+    },
     /// Rerun frozen evaluators at finalized kept commit, without reselection.
     Verify {
         /// Existing frozen run identifier.
@@ -137,6 +158,8 @@ pub enum CommandReport {
     Report(Box<RunReportV1>),
     /// Standalone script-free evidence board.
     BoardHtml(String),
+    /// Complete local redacted evidence bundle.
+    Export(ExportResult),
     /// Independent kept-commit verification evidence.
     Verify(VerificationEvidence),
     /// Operator cancellation at stable boundary.
@@ -357,6 +380,9 @@ pub enum AppError {
     /// HTML document and JSON output are mutually exclusive.
     #[error("--html cannot be combined with --json")]
     IncompatibleOutputFormat,
+    /// Export refused unsafe root, artifact, or report.
+    #[error(transparent)]
+    Export(#[from] ExportError),
 }
 
 impl AppError {
@@ -377,7 +403,8 @@ impl AppError {
             | Self::BaselineExecution { .. }
             | Self::Market(_)
             | Self::Report(_)
-            | Self::Board(_) => EXIT_ENVIRONMENT,
+            | Self::Board(_)
+            | Self::Export(_) => EXIT_ENVIRONMENT,
             Self::Io { .. } | Self::Json(_) | Self::ClockBeforeEpoch | Self::RunIdCollision => {
                 EXIT_FAILURE
             }
@@ -449,16 +476,7 @@ pub fn execute(cli: &Cli) -> Result<Execution, AppError> {
                 return Err(AppError::IncompatibleOutputFormat);
             }
             let source = load_report_source(&cli.repository, run_id)?;
-            let market = if receipt.is_empty() {
-                MarketEvidenceLedger {
-                    receipts: Vec::new(),
-                }
-            } else {
-                let root = evidence_root
-                    .as_ref()
-                    .ok_or(AppError::MissingEvidenceRoot)?;
-                import_receipts(root, receipt)?
-            };
+            let market = operator_market(evidence_root.as_deref(), receipt)?;
             let report = build_report(&source, market)?;
             if *html {
                 let html = render_board(&report, &source.run_directory)?;
@@ -469,6 +487,18 @@ pub fn execute(cli: &Cli) -> Result<Execution, AppError> {
             } else {
                 CommandReport::Report(Box::new(report))
             }
+        }
+        Action::Export {
+            run_id,
+            export_root,
+            artifact,
+            evidence_root,
+            receipt,
+        } => {
+            let source = load_report_source(&cli.repository, run_id)?;
+            let market = operator_market(evidence_root.as_deref(), receipt)?;
+            let report = build_report(&source, market)?;
+            CommandReport::Export(export_bundle(&source, &report, export_root, artifact)?)
         }
         Action::Verify { run_id } => CommandReport::Verify(verify_kept_commit(
             &cli.repository,
@@ -485,6 +515,19 @@ pub fn execute(cli: &Cli) -> Result<Execution, AppError> {
         _ => 0,
     };
     Ok(Execution { report, exit_code })
+}
+
+fn operator_market(
+    evidence_root: Option<&Path>,
+    receipt: &[PathBuf],
+) -> Result<MarketEvidenceLedger, AppError> {
+    if receipt.is_empty() {
+        return Ok(MarketEvidenceLedger {
+            receipts: Vec::new(),
+        });
+    }
+    let root = evidence_root.ok_or(AppError::MissingEvidenceRoot)?;
+    Ok(import_receipts(root, receipt)?)
 }
 
 fn resume_once(repository: &Path, run_id: &str) -> Result<ResumeReport, AppError> {
@@ -935,6 +978,11 @@ fn render(report: &CommandReport, json: bool) -> Result<(), AppError> {
             println!("{}", serde_json::to_string_pretty(report)?);
         }
         CommandReport::BoardHtml(_) => unreachable!("HTML rendered before text match"),
+        CommandReport::Export(report) => {
+            println!("bundle: {}", report.directory.display());
+            println!("files: {}", report.file_count);
+            println!("report SHA-256: {}", report.report_sha256);
+        }
         CommandReport::Verify(report) => {
             println!("run: {}", report.run_id);
             println!("verified commit: {}", report.verified_commit);

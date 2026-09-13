@@ -48,7 +48,7 @@ pub enum ReceiptSource {
 }
 
 /// Whether importer could independently verify source bytes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DigestStatus {
     /// Local source file digest matched declaration.
@@ -74,7 +74,7 @@ pub struct ReceiptDeclaration {
 }
 
 /// Imported receipt with sidecar digest and explicit trust level.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MarketReceipt {
     /// Relative sidecar path under evidence root.
     pub receipt_path: PathBuf,
@@ -87,7 +87,7 @@ pub struct MarketReceipt {
 }
 
 /// Read-only aggregate, deliberately separate from evaluator snapshots.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MarketEvidenceLedger {
     /// Imported provenance-bound receipts in requested path order.
     pub receipts: Vec<MarketReceipt>,

@@ -2,8 +2,10 @@
 //! stay separate from internal code-selection measurements.
 
 mod board;
+mod export;
 
 pub use board::{BoardError, render_board};
+pub use export::{ExportError, ExportResult, export_bundle};
 
 use autoresearch_core::{
     CandidateDecision, CandidateFinalization, DecisionError, EvaluationSnapshot, EvaluatorFailure,
@@ -13,11 +15,11 @@ use autoresearch_core::{
 use autoresearch_evaluator::EvaluatorOutput;
 use autoresearch_market::MarketEvidenceLedger;
 use autoresearch_runner::{EnvironmentRecord, ReportSource};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Stable report schema for readers and static board generation.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunReportV1 {
     /// Schema version, currently 1.
     pub schema_version: u8,
@@ -52,7 +54,7 @@ pub struct RunReportV1 {
 }
 
 /// Host and frozen command names recorded before first evaluator.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnvironmentEvidence {
     /// Journal-bound fingerprint, absent in legacy run.
     pub fingerprint_sha256: Option<String>,
@@ -63,7 +65,7 @@ pub struct EnvironmentEvidence {
 }
 
 /// Frozen objective name and direction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObjectiveDefinition {
     /// Frozen numeric name.
     pub name: String,
@@ -72,7 +74,7 @@ pub struct ObjectiveDefinition {
 }
 
 /// Baseline snapshot and explicit artifact-availability boundary.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BaselineEvidence {
     /// Exact base commit.
     pub commit: String,
@@ -83,7 +85,7 @@ pub struct BaselineEvidence {
 }
 
 /// One journal-prepared candidate, including incomplete states.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CandidateEvidence {
     /// One-based candidate number.
     pub index: u32,
@@ -116,7 +118,7 @@ pub struct CandidateEvidence {
 }
 
 /// Journaled redacted evaluator failure with exact adapter identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FailureSummary {
     /// Frozen evaluator ID.
     pub evaluator_id: String,
@@ -125,7 +127,7 @@ pub struct FailureSummary {
 }
 
 /// Baseline or prior-best gate versus candidate gate.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GateComparison {
     /// Frozen hard-gate name.
     pub name: String,
@@ -136,7 +138,7 @@ pub struct GateComparison {
 }
 
 /// Validated portable artifact reference; no raw process log.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactReference {
     /// Frozen evaluator ID.
     pub evaluator_id: String,
@@ -166,6 +168,9 @@ pub enum ReportError {
     /// Objective subtraction became nonfinite.
     #[error("candidate objective delta is not finite")]
     NonFiniteDelta,
+    /// Untrusted report text includes a credential in structural provenance.
+    #[error("report contains credential pattern in structural evidence")]
+    SensitiveEvidence,
 }
 
 /// Builds stable report from runner-validated frozen source and separately
@@ -203,7 +208,7 @@ pub fn build_report(
     });
     let (candidates, current_best_snapshot) = build_timeline(source, view.baseline())?;
     let objective = source.manifest.experiment().objective();
-    Ok(RunReportV1 {
+    let report = RunReportV1 {
         schema_version: 1,
         run_id: source.run_id.clone(),
         base_commit: source.base_commit.clone(),
@@ -211,9 +216,9 @@ pub fn build_report(
         frozen_identity_sha256: source.identity.aggregate_sha256.clone(),
         environment: EnvironmentEvidence {
             fingerprint_sha256: source.environment_fingerprint.clone(),
-            record: source.environment.clone(),
-            status: if source.environment.is_some() {
-                "captured".into()
+            record: None,
+            status: if source.environment_fingerprint.is_some() {
+                "fingerprint_captured".into()
             } else {
                 "unavailable_in_legacy_run".into()
             },
@@ -235,7 +240,8 @@ pub fn build_report(
         stop_reason: view.stop_reason().map(str::to_owned),
         market_evidence,
         commercial_validation_status: "not_assessed_by_internal_evaluators".into(),
-    })
+    };
+    export::redact_public_report(&report).map_err(|_| ReportError::SensitiveEvidence)
 }
 
 /// Emits deterministic pretty JSON with one final newline.

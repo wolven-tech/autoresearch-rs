@@ -185,8 +185,10 @@ dependencies = [
  "autoresearch-market",
  "autoresearch-runner",
  "headless_chrome",
+ "regex",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "url",
 ]

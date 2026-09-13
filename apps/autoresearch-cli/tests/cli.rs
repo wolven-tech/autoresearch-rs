@@ -219,7 +219,7 @@ fn report_replays_frozen_baseline_without_mutating_repository() {
     let report: Value = serde_json::from_slice(&report.stdout).expect("report JSON");
     assert_eq!(report["command"], "report");
     assert_eq!(report["schema_version"], 1);
-    assert_eq!(report["environment"]["status"], "captured");
+    assert_eq!(report["environment"]["status"], "fingerprint_captured");
     assert_eq!(report["baseline"]["commit"], baseline["base_commit"]);
     assert_eq!(report["current_best_commit"], baseline["base_commit"]);
     assert!(
@@ -243,7 +243,47 @@ fn report_replays_frozen_baseline_without_mutating_repository() {
         &["--json", "report", "--run-id", run_id, "--html"],
     );
     assert_eq!(mixed.status.code(), Some(3));
+    let export_root = repository.0.with_extension("exports");
+    fs::create_dir(&export_root).expect("external export root");
+    let exported = run_cli(
+        &repository.0,
+        &[
+            "--json",
+            "export",
+            "--run-id",
+            run_id,
+            "--export-root",
+            export_root.to_str().expect("export root UTF-8"),
+        ],
+    );
+    assert_success(&exported);
+    let exported: Value = serde_json::from_slice(&exported.stdout).expect("export JSON");
+    assert_eq!(exported["command"], "export");
+    let bundle = PathBuf::from(exported["directory"].as_str().expect("bundle directory"));
+    let provenance: Value =
+        serde_json::from_slice(&fs::read(bundle.join("provenance.json")).expect("provenance"))
+            .expect("provenance JSON");
+    assert_eq!(
+        provenance["environment_fingerprint_sha256"],
+        baseline["environment_fingerprint"]
+    );
+    let export_report: Value =
+        serde_json::from_slice(&fs::read(bundle.join("report.json")).expect("export report"))
+            .expect("export report JSON");
+    assert!(export_report["environment"]["record"].is_null());
+    assert_eq!(
+        export_report["environment"]["status"],
+        "fingerprint_only_in_export"
+    );
+    assert!(bundle.join("report.html").is_file());
+    assert!(bundle.join("report.json").is_file());
+    assert!(!bundle.join("journal.jsonl").exists());
+    assert_eq!(
+        fs::read(run_dir.join("journal.jsonl")).expect("journal unchanged"),
+        journal_before
+    );
     assert_eq!(git_text(&repository.0, &["status", "--porcelain=v1"]), "");
+    fs::remove_dir_all(export_root).expect("remove owned export fixture");
 }
 
 #[test]

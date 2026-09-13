@@ -7,11 +7,15 @@ use autoresearch_core::{
     MetricDirection, NumericMetricKind,
 };
 use autoresearch_market::MarketEvidenceLedger;
-use autoresearch_report::{ArtifactReference, build_report, render_board, to_json_bytes};
+use autoresearch_report::{
+    ArtifactReference, ExportError, FailureSummary, build_report, export_bundle, render_board,
+    to_json_bytes,
+};
 use autoresearch_runner::ReportSource;
 use headless_chrome::protocol::cdp::Emulation;
 use headless_chrome::protocol::cdp::Page;
 use headless_chrome::{Browser, LaunchOptions};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -191,6 +195,43 @@ fn failed_attempt_is_reported_without_a_candidate_score() {
     assert_eq!(report.candidates[0].state, "prepared");
     assert!(report.candidates[0].snapshot.is_none());
     assert_eq!(report.candidates[0].failures.len(), 1);
+}
+
+#[test]
+fn ordinary_report_redacts_evaluator_supplied_credential_text() {
+    let mut source = source();
+    if let JournalEvent::BaselineCaptured { snapshot } = &mut source.entries[1].event {
+        snapshot.measurements[0] =
+            Measurement::hard_gate("tests", true, Some("api_key=topsecret1234".into()))
+                .expect("gate detail");
+    }
+    source.entries.truncate(3);
+    source.entries.push(JournalEntry {
+        sequence: 3,
+        run_id: source.run_id.clone(),
+        event: JournalEvent::CandidateEvaluatorFailed {
+            index: 1,
+            evaluator_id: "check".into(),
+            evaluated_commit: "attempted".into(),
+            failure: EvaluatorFailure {
+                class: FailureClass::Protocol,
+                detail: "Bearer abcdefghijk987654".into(),
+            },
+        },
+    });
+    source.current_commit = "base".into();
+    let report = build_report(
+        &source,
+        MarketEvidenceLedger {
+            receipts: Vec::new(),
+        },
+    )
+    .expect("redacted report");
+    let json = String::from_utf8(to_json_bytes(&report).expect("JSON")).expect("UTF-8");
+    assert!(json.contains("[REDACTED]"));
+    assert!(!json.contains("topsecret1234"));
+    assert!(!json.contains("abcdefghijk987654"));
+    assert!(report.environment.record.is_none());
 }
 
 #[test]
@@ -384,4 +425,191 @@ fn configure_board_viewport(tab: &headless_chrome::Tab, width: u32) {
         }]),
     })
     .expect("reduced motion");
+}
+
+fn export_source(name: &str) -> (ReportSource, PathBuf, PathBuf) {
+    let root =
+        std::env::temp_dir().join(format!("autoresearch-export-{name}-{}", std::process::id()));
+    let mut source = source();
+    source.repository = root.join("product");
+    source.run_directory = root.join("run");
+    let export_root = root.join("exports");
+    fs::create_dir_all(source.run_directory.join("artifacts")).expect("artifact root");
+    fs::create_dir_all(&source.repository).expect("product root");
+    fs::create_dir_all(&export_root).expect("export root");
+    (source, export_root, root)
+}
+
+#[test]
+fn export_redacts_report_and_copies_only_selected_artifact() {
+    let (source, export_root, root) = export_source("redaction");
+    let mut report = build_report(
+        &source,
+        MarketEvidenceLedger {
+            receipts: Vec::new(),
+        },
+    )
+    .expect("report");
+    report
+        .baseline
+        .as_mut()
+        .expect("baseline")
+        .snapshot
+        .measurements[0] =
+        Measurement::hard_gate("tests", true, Some("api_key=topsecret1234".into()))
+            .expect("gate detail");
+    report.candidates[0].artifacts.push(ArtifactReference {
+        evaluator_id: "check".into(),
+        name: "Screenshot".into(),
+        relative_path: "view.png".into(),
+        media_type: "image/png".into(),
+    });
+    report.candidates[0].failures.push(FailureSummary {
+        evaluator_id: "check".into(),
+        failure: EvaluatorFailure {
+            class: FailureClass::Protocol,
+            detail: "sk_live_1234567890123456 Bearer abcdefghijk987654".into(),
+        },
+    });
+    fs::write(
+        source.run_directory.join("artifacts/view.png"),
+        b"safe image bytes",
+    )
+    .expect("artifact");
+    let result = export_bundle(&source, &report, &export_root, &[PathBuf::from("view.png")])
+        .expect("export");
+    assert_eq!(result.file_count, 3);
+    assert_eq!(
+        result.directory,
+        fs::canonicalize(&export_root)
+            .expect("canonical export root")
+            .join("autoresearch-report-fixture")
+    );
+    let json = fs::read_to_string(result.directory.join("report.json")).expect("report JSON");
+    let html = fs::read_to_string(result.directory.join("report.html")).expect("report HTML");
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &fs::read(result.directory.join("provenance.json")).expect("manifest"),
+    )
+    .expect("manifest JSON");
+    assert!(json.contains("[REDACTED]"));
+    assert!(!json.contains("topsecret1234"));
+    assert!(!json.contains("sk_live_1234567890123456"));
+    assert!(!json.contains("abcdefghijk987654"));
+    assert!(html.contains("href=\"artifacts/view.png\""));
+    assert!(!html.contains("topsecret1234"));
+    assert_eq!(
+        manifest["frozen_contract_sha256"],
+        source.identity.aggregate_sha256
+    );
+    assert_eq!(manifest["files"].as_array().expect("files").len(), 3);
+    for entry in manifest["files"].as_array().expect("files") {
+        let path = entry["path"].as_str().expect("member path");
+        let expected = entry["sha256"].as_str().expect("member digest");
+        let bytes = fs::read(result.directory.join(path)).expect("member bytes");
+        assert_eq!(format!("{:x}", Sha256::digest(&bytes)), expected);
+    }
+    assert_eq!(
+        fs::read(result.directory.join("artifacts/view.png")).expect("copied"),
+        b"safe image bytes"
+    );
+    assert!(!result.directory.join("journal.jsonl").exists());
+    assert!(!result.directory.join("environment.json").exists());
+    assert!(matches!(
+        export_bundle(&source, &report, &export_root, &[PathBuf::from("view.png")]),
+        Err(ExportError::ExistingDestination)
+    ));
+    fs::remove_dir_all(root).expect("remove owned fixture");
+}
+
+#[test]
+fn export_rejects_token_artifact_and_repository_destination() {
+    let (source, export_root, root) = export_source("token");
+    let mut report = build_report(
+        &source,
+        MarketEvidenceLedger {
+            receipts: Vec::new(),
+        },
+    )
+    .expect("report");
+    report.candidates[0].artifacts.push(ArtifactReference {
+        evaluator_id: "check".into(),
+        name: "Evidence".into(),
+        relative_path: "evidence.txt".into(),
+        media_type: "text/plain".into(),
+    });
+    fs::write(
+        source.run_directory.join("artifacts/evidence.txt"),
+        b"Bearer abcdefghijk987654",
+    )
+    .expect("sensitive artifact");
+    assert!(matches!(
+        export_bundle(
+            &source,
+            &report,
+            &export_root,
+            &[PathBuf::from("evidence.txt")]
+        ),
+        Err(ExportError::SensitiveArtifact)
+    ));
+    report.candidates[0].artifacts.push(ArtifactReference {
+        evaluator_id: "check".into(),
+        name: "Process log".into(),
+        relative_path: "clean.log".into(),
+        media_type: "text/plain".into(),
+    });
+    fs::write(
+        source.run_directory.join("artifacts/clean.log"),
+        b"no token in this process output",
+    )
+    .expect("plain process log");
+    assert!(matches!(
+        export_bundle(
+            &source,
+            &report,
+            &export_root,
+            &[PathBuf::from("clean.log")]
+        ),
+        Err(ExportError::RawProcessLog)
+    ));
+    assert!(matches!(
+        export_bundle(&source, &report, &source.repository, &[]),
+        Err(ExportError::UnsafeRoot)
+    ));
+    assert!(!export_root.join("autoresearch-report-fixture").exists());
+    fs::remove_dir_all(root).expect("remove owned fixture");
+}
+
+#[cfg(unix)]
+#[test]
+fn export_rejects_symlinked_outside_artifact() {
+    let (source, export_root, root) = export_source("symlink");
+    let mut report = build_report(
+        &source,
+        MarketEvidenceLedger {
+            receipts: Vec::new(),
+        },
+    )
+    .expect("report");
+    report.candidates[0].artifacts.push(ArtifactReference {
+        evaluator_id: "check".into(),
+        name: "Outside".into(),
+        relative_path: "outside.txt".into(),
+        media_type: "text/plain".into(),
+    });
+    std::os::unix::fs::symlink(
+        "/etc/passwd",
+        source.run_directory.join("artifacts/outside.txt"),
+    )
+    .expect("outside symlink");
+    assert!(matches!(
+        export_bundle(
+            &source,
+            &report,
+            &export_root,
+            &[PathBuf::from("outside.txt")]
+        ),
+        Err(ExportError::UnsafeArtifact)
+    ));
+    assert!(!export_root.join("autoresearch-report-fixture").exists());
+    fs::remove_dir_all(root).expect("remove owned fixture");
 }

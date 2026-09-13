@@ -10,8 +10,8 @@
 > exact-commit `baseline`, one-candidate-at-a-time `run`, journal `resume`,
 > read-only `status`, independent kept-commit `verify`, and stable-boundary
 > `stop`. Versioned journal-backed JSON report and standalone offline HTML
-> board now ship; redacted export and broad autonomous orchestration remain
-> unfinished. Original Python implementation remains below and runnable
+> board and bounded redacted local export now ship; broad autonomous
+> orchestration remains unfinished. Original Python implementation remains below and runnable
 > unchanged.
 
 ## Rust foundation quick start
@@ -32,6 +32,7 @@ cargo run -p autoresearch-cli -- --repository /path/to/repository resume --run-i
 cargo run -p autoresearch-cli -- --repository /path/to/repository verify --run-id RUN_ID
 cargo run -p autoresearch-cli -- --repository /path/to/repository report --run-id RUN_ID
 cargo run -p autoresearch-cli -- --repository /path/to/repository report --run-id RUN_ID --html
+cargo run -p autoresearch-cli -- --repository /path/to/repository export --run-id RUN_ID --export-root /absolute/existing/review-dir
 ```
 
 `init` never overwrites existing contract files. `doctor` is read-only and does
@@ -54,7 +55,8 @@ candidates; active candidate needs inspection or completion first.
 `report` rebuilds versioned JSON from validated frozen source and journal;
 `--html` emits a script-free evidence board to stdout. See
 [`docs/evidence-board.md`](docs/evidence-board.md) for provenance and
-accessibility limits.
+accessibility limits. `export` writes a new redacted bundle outside the
+product checkout and copies only explicitly selected, declared artifacts.
 
 Architecture and safety decisions: [`docs/plans/2026-09-11-autoresearch-rust-platform-design.md`](docs/plans/2026-09-11-autoresearch-rust-platform-design.md).
 
