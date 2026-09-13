@@ -6,6 +6,9 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+mod model;
+pub use model::{ModelEvidence, TinyGpt, TinyModelConfig};
+
 const CONTRACT: &[u8] = include_bytes!("../../../fixtures/tiny/contract.json");
 const TRAIN: &[u8] = include_bytes!("../../../fixtures/tiny/train.txt");
 const VALIDATION: &[u8] = include_bytes!("../../../fixtures/tiny/validation.txt");

@@ -227,6 +227,7 @@ name = "autoresearch-training-candle"
 version = "0.1.0"
 dependencies = [
  "candle-core",
+ "candle-nn",
  "serde",
  "serde_json",
  "sha2",
@@ -318,6 +319,21 @@ dependencies = [
  "ug",
  "yoke 0.7.5",
  "zip",
+]
+
+[[package]]
+name = "candle-nn"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be1160c3b63f47d40d91110a3e1e1e566ae38edddbbf492a60b40ffc3bc1ff38"
+dependencies = [
+ "candle-core",
+ "half",
+ "num-traits",
+ "rayon",
+ "safetensors",
+ "serde",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
