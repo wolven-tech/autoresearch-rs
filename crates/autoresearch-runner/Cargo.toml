@@ -12,6 +12,7 @@ autoresearch-config = { path = "../autoresearch-config" }
 autoresearch-core = { path = "../autoresearch-core" }
 autoresearch-evaluator = { path = "../autoresearch-evaluator" }
 autoresearch-git = { path = "../autoresearch-git" }
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 

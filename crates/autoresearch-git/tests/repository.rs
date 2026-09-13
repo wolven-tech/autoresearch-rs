@@ -72,7 +72,9 @@ fn inspects_clean_repository_without_modifying_caller_checkout() {
 #[test]
 fn reads_only_exact_ordinary_commit_blob_with_size_cap() {
     let repository = TestRepository::new(true);
-    let snapshot = GitRepository.inspect(&repository.0, "HEAD").expect("inspect");
+    let snapshot = GitRepository
+        .inspect(&repository.0, "HEAD")
+        .expect("inspect");
     let path = RepoPath::new("tracked.txt").expect("path");
     assert_eq!(
         GitRepository
@@ -86,11 +88,7 @@ fn reads_only_exact_ordinary_commit_blob_with_size_cap() {
     ));
     assert_eq!(
         GitRepository
-            .read_blob_at_commit(
-                &snapshot,
-                &RepoPath::new("absent.txt").expect("path"),
-                8
-            )
+            .read_blob_at_commit(&snapshot, &RepoPath::new("absent.txt").expect("path"), 8)
             .expect("missing"),
         None
     );

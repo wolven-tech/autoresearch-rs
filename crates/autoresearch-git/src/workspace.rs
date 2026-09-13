@@ -24,6 +24,12 @@ pub struct LockedGitRepository<'a> {
 }
 
 impl<'a> LockedGitRepository<'a> {
+    /// Returns canonical caller repository owned by this lock.
+    #[must_use]
+    pub fn repository_root(&self) -> &Path {
+        self.snapshot.root()
+    }
+
     /// Binds validated repository snapshot to matching live lock.
     ///
     /// # Errors

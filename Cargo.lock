@@ -167,6 +167,7 @@ dependencies = [
  "autoresearch-core",
  "autoresearch-evaluator",
  "autoresearch-git",
+ "serde",
  "serde_json",
  "thiserror",
 ]

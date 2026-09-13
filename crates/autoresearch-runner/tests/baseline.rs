@@ -332,7 +332,9 @@ fn self_consistent_frozen_tamper_still_conflicts_with_original_commit() {
     let executor = FakeExecutor::new(None, false);
     assert!(matches!(
         capture_existing_baseline(&fixture.root, "run-1", &executor, BTreeMap::new()),
-        Err(RunnerError::InvalidState("frozen source differs from base commit"))
+        Err(RunnerError::InvalidState(
+            "frozen source differs from base commit"
+        ))
     ));
     assert!(executor.called.borrow().is_empty());
 }
