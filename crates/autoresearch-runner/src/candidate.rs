@@ -125,9 +125,25 @@ pub fn evaluate_committed_candidate(
         &evaluated,
         stored.manifest.experiment().objective().name(),
     )?;
+    record_and_finalize(&mut stored, &git, index, committed, evaluated, decision)
+}
+
+fn record_and_finalize(
+    stored: &mut StoredRun,
+    git: &LockedGitRepository<'_>,
+    index: u32,
+    committed: &CandidateCommit,
+    evaluated: EvaluationSnapshot,
+    decision: CandidateDecision,
+) -> Result<CandidateOutcome, RunnerError> {
     stored.append(JournalEvent::CandidateDecisionRecorded {
         index,
         candidate_commit: committed.commit_id().to_string(),
+        changed_paths: committed
+            .changed_paths()
+            .iter()
+            .map(|path| path.as_str().into())
+            .collect(),
         snapshot: evaluated.clone(),
         decision: decision.clone(),
     })?;

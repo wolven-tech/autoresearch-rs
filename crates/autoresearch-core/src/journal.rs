@@ -1,6 +1,6 @@
 //! Append-only run events and pure crash-recovery replay.
 
-use crate::{CandidateDecision, Disposition, EvaluationSnapshot, EvaluatorFailure};
+use crate::{CandidateDecision, Disposition, EvaluationSnapshot, EvaluatorFailure, RepoPath};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -26,6 +26,11 @@ pub enum JournalEvent {
         base_commit: String,
         /// Aggregate frozen-input digest.
         frozen_identity: String,
+    },
+    /// Binds redaction-safe local runtime facts captured before evaluation.
+    EnvironmentCaptured {
+        /// SHA-256 of run-owned environment.json bytes.
+        fingerprint_sha256: String,
     },
     /// Stores comparable baseline evaluation.
     BaselineCaptured {
@@ -66,6 +71,10 @@ pub enum JournalEvent {
         index: u32,
         /// Exact candidate commit evaluated by frozen policy.
         candidate_commit: String,
+        /// Canonical changed paths from exact committed candidate diff.
+        /// Empty only in journals created before this field existed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        changed_paths: Vec<String>,
         /// Typed evaluator output.
         snapshot: EvaluationSnapshot,
         /// Frozen-policy result.
@@ -123,6 +132,7 @@ impl ReplayState {
 pub struct RunView {
     run_id: String,
     frozen_identity: String,
+    environment_fingerprint: Option<String>,
     base_commit: String,
     current_commit: String,
     baseline: Option<EvaluationSnapshot>,
@@ -143,6 +153,12 @@ impl RunView {
     #[must_use]
     pub fn frozen_identity(&self) -> &str {
         &self.frozen_identity
+    }
+
+    /// Returns captured environment-record digest, if this run records one.
+    #[must_use]
+    pub fn environment_fingerprint(&self) -> Option<&str> {
+        self.environment_fingerprint.as_deref()
     }
 
     /// Returns original baseline commit.
@@ -344,6 +360,7 @@ enum CandidateStage {
 struct Machine {
     run_id: String,
     frozen_identity: Option<String>,
+    environment_fingerprint: Option<String>,
     base_commit: Option<String>,
     current_commit: Option<String>,
     baseline: Option<EvaluationSnapshot>,
@@ -360,6 +377,7 @@ impl Machine {
         Self {
             run_id,
             frozen_identity: None,
+            environment_fingerprint: None,
             base_commit: None,
             current_commit: None,
             baseline: None,
@@ -401,6 +419,9 @@ impl Machine {
                 base_commit,
                 frozen_identity,
             } => self.start(base_commit, frozen_identity),
+            JournalEvent::EnvironmentCaptured { fingerprint_sha256 } => {
+                self.capture_environment(fingerprint_sha256)
+            }
             JournalEvent::BaselineCaptured { snapshot } => self.capture_baseline(snapshot),
             JournalEvent::BaselineFailed {
                 evaluator_id,
@@ -420,9 +441,10 @@ impl Machine {
             JournalEvent::CandidateDecisionRecorded {
                 index,
                 candidate_commit,
+                changed_paths,
                 snapshot,
                 decision,
-            } => self.record_decision(*index, candidate_commit, snapshot, decision),
+            } => self.record_decision(*index, candidate_commit, changed_paths, snapshot, decision),
             JournalEvent::CandidateFinalized { index, outcome } => self.finalize(*index, outcome),
             JournalEvent::RunStopped { reason } => self.stop(reason),
         }
@@ -437,6 +459,25 @@ impl Machine {
         self.current_commit = Some(base_commit.clone());
         self.base_commit = Some(base_commit);
         self.frozen_identity = Some(frozen_identity);
+        Ok(())
+    }
+
+    fn capture_environment(&mut self, fingerprint_sha256: &str) -> Result<(), JournalError> {
+        if self.base_commit.is_none()
+            || self.environment_fingerprint.is_some()
+            || self.baseline.is_some()
+            || self.active.is_some()
+        {
+            return Err(self.invalid("environment_captured"));
+        }
+        if fingerprint_sha256.len() != 64
+            || !fingerprint_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        {
+            return Err(self.invalid("environment_captured"));
+        }
+        self.environment_fingerprint = Some(fingerprint_sha256.into());
         Ok(())
     }
 
@@ -536,9 +577,17 @@ impl Machine {
         &mut self,
         index: u32,
         candidate_commit: &str,
+        changed_paths: &[String],
         _snapshot: &EvaluationSnapshot,
         decision: &CandidateDecision,
     ) -> Result<(), JournalError> {
+        let mut prior = None;
+        for path in changed_paths {
+            if RepoPath::new(path).is_err() || prior.is_some_and(|value: &str| value >= path) {
+                return Err(self.invalid("candidate_decision_recorded"));
+            }
+            prior = Some(path);
+        }
         let Some(CandidateStage::Prepared {
             index: active_index,
             worktree_id,
@@ -686,6 +735,7 @@ impl Machine {
         Ok(RunView {
             run_id: self.run_id,
             frozen_identity,
+            environment_fingerprint: self.environment_fingerprint,
             base_commit,
             current_commit,
             baseline: self.baseline,
@@ -708,6 +758,7 @@ fn checked<'a>(value: &'a str, field: &'static str) -> Result<&'a str, JournalEr
 const fn event_name(event: &JournalEvent) -> &'static str {
     match event {
         JournalEvent::RunStarted { .. } => "run_started",
+        JournalEvent::EnvironmentCaptured { .. } => "environment_captured",
         JournalEvent::BaselineCaptured { .. } => "baseline_captured",
         JournalEvent::BaselineFailed { .. } => "baseline_failed",
         JournalEvent::CandidatePrepared { .. } => "candidate_prepared",
@@ -801,6 +852,7 @@ mod tests {
             JournalEvent::CandidateDecisionRecorded {
                 index: 1,
                 candidate_commit: "def".into(),
+                changed_paths: Vec::new(),
                 snapshot: snapshot(11.0),
                 decision: decision(disposition),
             },
@@ -834,6 +886,7 @@ mod tests {
             JournalEvent::CandidateDecisionRecorded {
                 index: 1,
                 candidate_commit: "other".into(),
+                changed_paths: Vec::new(),
                 snapshot: snapshot(11.0),
                 decision: decision(Disposition::Keep),
             },
@@ -1068,6 +1121,7 @@ mod tests {
                 JournalEvent::CandidateDecisionRecorded {
                     index: 1,
                     candidate_commit: "def".into(),
+                    changed_paths: Vec::new(),
                     snapshot: snapshot(11.0),
                     decision: decision(Disposition::Keep),
                 },

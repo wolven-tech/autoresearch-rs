@@ -3,6 +3,7 @@
 use crate::{AppError, BaselineReport, git_output, read_manifest};
 use autoresearch_config::FrozenIdentity;
 use autoresearch_core::{JournalEntry, JournalEvent};
+use autoresearch_runner::EnvironmentRecord;
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -42,6 +43,8 @@ pub(crate) fn capture(repository: &Path) -> Result<BaselineReport, AppError> {
         &BTreeMap::new(),
         product_gate.as_deref(),
     )?;
+    let (environment_bytes, environment_fingerprint) =
+        EnvironmentRecord::capture(&manifest).encoded_fingerprint()?;
     let commit = git_output(&root, &["rev-parse", "--verify", "HEAD^{commit}"])?;
     let run_id_prefix = new_run_id(&commit)?;
     let (run_id, run_directory) = create_run_directory(&root, &run_id_prefix)?;
@@ -64,6 +67,7 @@ pub(crate) fn capture(repository: &Path) -> Result<BaselineReport, AppError> {
     let mut identity_json = serde_json::to_vec_pretty(&identity)?;
     identity_json.push(b'\n');
     write_new(&run_directory.join("identity.json"), &identity_json)?;
+    write_new(&run_directory.join("environment.json"), &environment_bytes)?;
 
     let journal_entry = JournalEntry {
         sequence: 0,
@@ -75,6 +79,15 @@ pub(crate) fn capture(repository: &Path) -> Result<BaselineReport, AppError> {
     };
     let mut journal_json = serde_json::to_vec(&journal_entry)?;
     journal_json.push(b'\n');
+    let environment_entry = JournalEntry {
+        sequence: 1,
+        run_id: run_id.clone(),
+        event: JournalEvent::EnvironmentCaptured {
+            fingerprint_sha256: environment_fingerprint.clone(),
+        },
+    };
+    journal_json.extend_from_slice(&serde_json::to_vec(&environment_entry)?);
+    journal_json.push(b'\n');
     write_new(&run_directory.join("journal.jsonl"), &journal_json)?;
 
     Ok(BaselineReport {
@@ -82,6 +95,7 @@ pub(crate) fn capture(repository: &Path) -> Result<BaselineReport, AppError> {
         run_directory,
         base_commit: commit,
         frozen_identity: identity.aggregate_sha256,
+        environment_fingerprint,
         next_action: "capture_baseline".into(),
         evidence_status: "pending evaluator evidence".into(),
         snapshot: None,

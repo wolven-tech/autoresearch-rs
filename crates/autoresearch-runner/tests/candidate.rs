@@ -142,6 +142,7 @@ impl Fixture {
         self.append(JournalEvent::CandidateDecisionRecorded {
             index: 1,
             candidate_commit: self.committed.commit_id().to_string(),
+            changed_paths: Vec::new(),
             snapshot: scored_snapshot(43.0),
             decision: CandidateDecision {
                 disposition: Disposition::Keep,
@@ -461,6 +462,7 @@ fn recorded_keep_for_commit_other_than_candidate_head_cannot_advance_ref() {
         event: JournalEvent::CandidateDecisionRecorded {
             index: 1,
             candidate_commit: fixture.base.clone(),
+            changed_paths: Vec::new(),
             snapshot: EvaluationSnapshot {
                 measurements: vec![
                     Measurement::hard_gate("tests", true, None).expect("gate"),

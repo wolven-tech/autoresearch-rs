@@ -1,5 +1,6 @@
 [package]
-name = "autoresearch-runner"
+name = "autoresearch-report"
+description = "Deterministic journal-backed run reports"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,18 +9,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-autoresearch-config = { path = "../autoresearch-config" }
 autoresearch-core = { path = "../autoresearch-core" }
 autoresearch-evaluator = { path = "../autoresearch-evaluator" }
-autoresearch-git = { path = "../autoresearch-git" }
+autoresearch-market = { path = "../autoresearch-market" }
+autoresearch-runner = { path = "../autoresearch-runner" }
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+autoresearch-config = { path = "../autoresearch-config" }
 
 [lints]
 workspace = true
-
-[[bin]]
-name = "autoresearch-mutation-fixture"
-path = "tests/support/mutation-fixture.rs"

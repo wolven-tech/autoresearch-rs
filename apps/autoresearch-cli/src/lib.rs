@@ -8,10 +8,12 @@ use autoresearch_core::{
     CandidateDecision, CandidateFinalization, EvaluationSnapshot, EvaluatorFailure,
 };
 use autoresearch_evaluator::CancellationToken;
+use autoresearch_market::{ImportError, MarketEvidenceLedger, import_receipts};
+use autoresearch_report::{ReportError, RunReportV1, build_report};
 use autoresearch_runner::{
     BaselineCapture, ResumeOutcome, RunMutationMode, RunStatus, RunStep, RunnerError,
     SubprocessBaselineExecutor, VerificationEvidence, advance_run_once, capture_existing_baseline,
-    inspect_run, resume_run, stop_run, verify_kept_commit,
+    inspect_run, load_report_source, resume_run, stop_run, verify_kept_commit,
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
@@ -79,6 +81,18 @@ enum Action {
         #[arg(long)]
         run_id: String,
     },
+    /// Reconstruct versioned evidence report without changing run or repository.
+    Report {
+        /// Existing frozen run identifier.
+        #[arg(long)]
+        run_id: String,
+        /// Root containing operator-selected commercial receipt sidecars.
+        #[arg(long)]
+        evidence_root: Option<PathBuf>,
+        /// Relative receipt sidecar under evidence root. Repeat to import more.
+        #[arg(long)]
+        receipt: Vec<PathBuf>,
+    },
     /// Rerun frozen evaluators at finalized kept commit, without reselection.
     Verify {
         /// Existing frozen run identifier.
@@ -116,6 +130,8 @@ pub enum CommandReport {
     Resume(ResumeReport),
     /// Read-only journal projection.
     Status(RunStatus),
+    /// Deterministic versioned report; receipts stay outside evaluator fields.
+    Report(Box<RunReportV1>),
     /// Independent kept-commit verification evidence.
     Verify(VerificationEvidence),
     /// Operator cancellation at stable boundary.
@@ -185,6 +201,8 @@ pub struct BaselineReport {
     pub base_commit: String,
     /// Aggregate SHA-256 over frozen inputs.
     pub frozen_identity: String,
+    /// Captured host/declared-command record digest.
+    pub environment_fingerprint: String,
     /// Replay-required next action.
     pub next_action: String,
     /// Explicit evidence state.
@@ -319,6 +337,15 @@ pub enum AppError {
     /// Manual mode cannot accept command executable authority.
     #[error("--allow-executable applies only to command mode")]
     UnexpectedExecutableAuthority,
+    /// Receipt sidecars require explicit bounded evidence root.
+    #[error("--receipt requires --evidence-root")]
+    MissingEvidenceRoot,
+    /// Receipt importer rejected provenance.
+    #[error(transparent)]
+    Market(#[from] ImportError),
+    /// Report replay or serialization rejected run evidence.
+    #[error(transparent)]
+    Report(#[from] ReportError),
 }
 
 impl AppError {
@@ -327,14 +354,17 @@ impl AppError {
             Self::Manifest(_)
             | Self::Identity(_)
             | Self::MissingExecutableAuthority
-            | Self::UnexpectedExecutableAuthority => EXIT_CONFIG,
+            | Self::UnexpectedExecutableAuthority
+            | Self::MissingEvidenceRoot => EXIT_CONFIG,
             Self::Runner(RunnerError::CandidateEvaluator { .. }) => EXIT_FAILURE,
             Self::Git(_)
             | Self::BlankProgram
             | Self::DirtyFrozenInputs(_)
             | Self::RunStateNotIgnored
             | Self::Runner(_)
-            | Self::BaselineExecution { .. } => EXIT_ENVIRONMENT,
+            | Self::BaselineExecution { .. }
+            | Self::Market(_)
+            | Self::Report(_) => EXIT_ENVIRONMENT,
             Self::Io { .. } | Self::Json(_) | Self::ClockBeforeEpoch | Self::RunIdCollision => {
                 EXIT_FAILURE
             }
@@ -396,6 +426,24 @@ pub fn execute(cli: &Cli) -> Result<Execution, AppError> {
         )?),
         Action::Resume { run_id } => CommandReport::Resume(resume_once(&cli.repository, run_id)?),
         Action::Status { run_id } => CommandReport::Status(inspect_run(&cli.repository, run_id)?),
+        Action::Report {
+            run_id,
+            evidence_root,
+            receipt,
+        } => {
+            let source = load_report_source(&cli.repository, run_id)?;
+            let market = if receipt.is_empty() {
+                MarketEvidenceLedger {
+                    receipts: Vec::new(),
+                }
+            } else {
+                let root = evidence_root
+                    .as_ref()
+                    .ok_or(AppError::MissingEvidenceRoot)?;
+                import_receipts(root, receipt)?
+            };
+            CommandReport::Report(Box::new(build_report(&source, market)?))
+        }
         Action::Verify { run_id } => CommandReport::Verify(verify_kept_commit(
             &cli.repository,
             run_id,
@@ -804,6 +852,10 @@ fn render(report: &CommandReport, json: bool) -> Result<(), AppError> {
             println!("run: {}", report.run_id);
             println!("base commit: {}", report.base_commit);
             println!("frozen identity: {}", report.frozen_identity);
+            println!(
+                "environment fingerprint: {}",
+                report.environment_fingerprint
+            );
             println!("evidence: {}", report.evidence_status);
             println!("next: {}", report.next_action);
             println!("directory: {}", report.run_directory.display());
@@ -848,6 +900,9 @@ fn render(report: &CommandReport, json: bool) -> Result<(), AppError> {
             if let Some(reason) = &report.stop_reason {
                 println!("stop: {reason}");
             }
+        }
+        CommandReport::Report(report) => {
+            println!("{}", serde_json::to_string_pretty(report)?);
         }
         CommandReport::Verify(report) => {
             println!("run: {}", report.run_id);

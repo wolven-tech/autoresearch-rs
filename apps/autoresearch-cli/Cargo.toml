@@ -16,6 +16,8 @@ path = "src/main.rs"
 autoresearch-config = { path = "../../crates/autoresearch-config" }
 autoresearch-core = { path = "../../crates/autoresearch-core" }
 autoresearch-evaluator = { path = "../../crates/autoresearch-evaluator" }
+autoresearch-market = { path = "../../crates/autoresearch-market" }
+autoresearch-report = { path = "../../crates/autoresearch-report" }
 autoresearch-runner = { path = "../../crates/autoresearch-runner" }
 clap.workspace = true
 serde.workspace = true

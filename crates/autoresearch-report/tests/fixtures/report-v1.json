@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "run_id": "report-fixture",
+  "base_commit": "base",
+  "current_best_commit": "improved",
+  "frozen_identity_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "environment": {
+    "fingerprint_sha256": null,
+    "record": null,
+    "status": "unavailable_in_legacy_run"
+  },
+  "objective": {
+    "name": "score",
+    "direction": "maximize"
+  },
+  "recovery_action": "prepare_candidate",
+  "baseline": {
+    "commit": "base",
+    "snapshot": {
+      "measurements": [
+        {
+          "kind": "hard_gate",
+          "name": "tests",
+          "outcome": {
+            "passed": true,
+            "detail": null
+          }
+        },
+        {
+          "kind": "numeric",
+          "name": "score",
+          "metric_kind": "objective",
+          "direction": "maximize",
+          "value": 1.0
+        }
+      ],
+      "complexity": {
+        "changed_lines": 1,
+        "dependency_delta": 0,
+        "runtime_ms": 11
+      }
+    },
+    "artifact_references_status": "not_recorded_in_baseline_journal"
+  },
+  "current_best_snapshot": {
+    "measurements": [
+      {
+        "kind": "hard_gate",
+        "name": "tests",
+        "outcome": {
+          "passed": true,
+          "detail": null
+        }
+      },
+      {
+        "kind": "numeric",
+        "name": "score",
+        "metric_kind": "objective",
+        "direction": "maximize",
+        "value": 2.0
+      }
+    ],
+    "complexity": {
+      "changed_lines": 1,
+      "dependency_delta": 0,
+      "runtime_ms": 22
+    }
+  },
+  "candidates": [
+    {
+      "index": 1,
+      "parent_commit": "base",
+      "candidate_commit": "improved",
+      "changed_paths": [
+        "tracked.txt"
+      ],
+      "changed_paths_status": "journaled",
+      "hard_gates": [
+        {
+          "name": "tests",
+          "prior_best_passed": true,
+          "candidate_passed": true
+        }
+      ],
+      "objective_delta": 1.0,
+      "runtime_ms": 22,
+      "snapshot": {
+        "measurements": [
+          {
+            "kind": "hard_gate",
+            "name": "tests",
+            "outcome": {
+              "passed": true,
+              "detail": null
+            }
+          },
+          {
+            "kind": "numeric",
+            "name": "score",
+            "metric_kind": "objective",
+            "direction": "maximize",
+            "value": 2.0
+          }
+        ],
+        "complexity": {
+          "changed_lines": 1,
+          "dependency_delta": 0,
+          "runtime_ms": 22
+        }
+      },
+      "decision": {
+        "disposition": "keep",
+        "reason": {
+          "reason": "primary_improvement"
+        }
+      },
+      "finalization": {
+        "outcome": "kept",
+        "commit": "improved"
+      },
+      "artifacts": [],
+      "state": "kept"
+    }
+  ],
+  "stop_reason": null,
+  "market_evidence": {
+    "receipts": []
+  },
+  "commercial_validation_status": "not_assessed_by_internal_evaluators"
+}

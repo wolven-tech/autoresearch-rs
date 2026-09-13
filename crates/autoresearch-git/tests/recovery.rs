@@ -368,6 +368,7 @@ fn decided_view(base: &str, candidate_commit: &str, disposition: Disposition) ->
         JournalEvent::CandidateDecisionRecorded {
             index: 1,
             candidate_commit: candidate_commit.into(),
+            changed_paths: Vec::new(),
             snapshot: snapshot(11.0),
             decision: CandidateDecision {
                 disposition,

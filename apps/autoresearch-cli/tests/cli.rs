@@ -203,6 +203,39 @@ fn baseline_freezes_clean_inputs_and_writes_replayable_start() {
 }
 
 #[test]
+fn report_replays_frozen_baseline_without_mutating_repository() {
+    let repository = TestRepository::new();
+    assert_success(&run_cli(&repository.0, &["init"]));
+    repository.configure_evaluator();
+    repository.commit_contract();
+    let baseline = run_cli(&repository.0, &["--json", "baseline"]);
+    assert_success(&baseline);
+    let baseline: Value = serde_json::from_slice(&baseline.stdout).expect("baseline JSON");
+    let run_id = baseline["run_id"].as_str().expect("run ID");
+    let run_dir = PathBuf::from(baseline["run_directory"].as_str().expect("run directory"));
+    let journal_before = fs::read(run_dir.join("journal.jsonl")).expect("journal before");
+    let report = run_cli(&repository.0, &["--json", "report", "--run-id", run_id]);
+    assert_success(&report);
+    let report: Value = serde_json::from_slice(&report.stdout).expect("report JSON");
+    assert_eq!(report["command"], "report");
+    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["environment"]["status"], "captured");
+    assert_eq!(report["baseline"]["commit"], baseline["base_commit"]);
+    assert_eq!(report["current_best_commit"], baseline["base_commit"]);
+    assert!(
+        report["market_evidence"]["receipts"]
+            .as_array()
+            .expect("receipts")
+            .is_empty()
+    );
+    assert_eq!(
+        fs::read(run_dir.join("journal.jsonl")).expect("journal after"),
+        journal_before
+    );
+    assert_eq!(git_text(&repository.0, &["status", "--porcelain=v1"]), "");
+}
+
+#[test]
 fn baseline_reports_explicit_declared_evaluator_failure_without_score() {
     let repository = TestRepository::new();
     assert_success(&run_cli(&repository.0, &["init"]));

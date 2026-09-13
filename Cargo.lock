@@ -94,6 +94,8 @@ dependencies = [
  "autoresearch-config",
  "autoresearch-core",
  "autoresearch-evaluator",
+ "autoresearch-market",
+ "autoresearch-report",
  "autoresearch-runner",
  "clap",
  "serde",
@@ -174,6 +176,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "autoresearch-report"
+version = "0.1.0"
+dependencies = [
+ "autoresearch-config",
+ "autoresearch-core",
+ "autoresearch-evaluator",
+ "autoresearch-market",
+ "autoresearch-runner",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "autoresearch-runner"
 version = "0.1.0"
 dependencies = [
@@ -183,6 +199,7 @@ dependencies = [
  "autoresearch-git",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
 ]
 

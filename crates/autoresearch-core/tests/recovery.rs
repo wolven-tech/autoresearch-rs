@@ -162,6 +162,7 @@ fn decided_entries(disposition: Disposition) -> Vec<JournalEntry> {
         JournalEvent::CandidateDecisionRecorded {
             index: 1,
             candidate_commit: CANDIDATE.into(),
+            changed_paths: Vec::new(),
             snapshot: snapshot(11.0),
             decision: CandidateDecision {
                 disposition,

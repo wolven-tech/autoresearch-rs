@@ -1,5 +1,6 @@
 //! Exact-commit baseline evaluation for a previously frozen run.
 
+use crate::environment::{EnvironmentRecord, sha256};
 use autoresearch_config::{
     Evaluator, FrozenIdentity, IdentityError, ManifestError, ValidatedManifest,
 };
@@ -253,6 +254,7 @@ pub(crate) struct StoredRun {
     pub(crate) manifest: ValidatedManifest,
     pub(crate) program: String,
     pub(crate) identity: FrozenIdentity,
+    pub(crate) environment: Option<EnvironmentRecord>,
     pub(crate) base_commit: String,
     pub(crate) entries: Vec<JournalEntry>,
     pub(crate) view: RunView,
@@ -320,6 +322,7 @@ impl StoredRun {
                 "frozen identity differs from journal",
             ));
         }
+        let environment = load_environment(&run_directory, &view, &manifest)?;
         let base = GitRepository.inspect(&root, view.base_commit())?;
         if base.head_commit().as_str() != view.base_commit() {
             return Err(RunnerError::InvalidState(
@@ -347,6 +350,7 @@ impl StoredRun {
             program: String::from_utf8(program)
                 .map_err(|_| RunnerError::InvalidState("frozen program is not UTF-8"))?,
             identity: stored,
+            environment,
             base_commit: view.base_commit().into(),
             entries,
             view: *view,
@@ -402,6 +406,29 @@ impl StoredRun {
         self.view = *projected_view;
         Ok(())
     }
+}
+
+fn load_environment(
+    run_directory: &Path,
+    view: &RunView,
+    manifest: &ValidatedManifest,
+) -> Result<Option<EnvironmentRecord>, RunnerError> {
+    let Some(fingerprint) = view.environment_fingerprint() else {
+        return Ok(None);
+    };
+    let bytes = read_regular(&run_directory.join("environment.json"), MAX_FROZEN_BYTES)?;
+    if sha256(&bytes) != fingerprint {
+        return Err(RunnerError::InvalidState(
+            "environment record differs from journal fingerprint",
+        ));
+    }
+    let record: EnvironmentRecord = serde_json::from_slice(&bytes)?;
+    if !record.matches_manifest(manifest) {
+        return Err(RunnerError::InvalidState(
+            "environment record differs from frozen command declarations",
+        ));
+    }
+    Ok(Some(record))
 }
 
 fn read_regular(path: &Path, max_bytes: u64) -> Result<Vec<u8>, RunnerError> {
