@@ -146,6 +146,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "autoresearch-market"
+version = "0.1.0"
+dependencies = [
+ "autoresearch-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "url",
+]
+
+[[package]]
 name = "autoresearch-product-web"
 version = "0.1.0"
 dependencies = [

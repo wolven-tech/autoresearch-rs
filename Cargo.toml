@@ -5,6 +5,7 @@ members = [
     "crates/autoresearch-core",
     "crates/autoresearch-evaluator",
     "crates/autoresearch-git",
+    "crates/autoresearch-market",
     "crates/autoresearch-product-web",
     "crates/autoresearch-runner",
 ]
