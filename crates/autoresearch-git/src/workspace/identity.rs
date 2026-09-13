@@ -10,7 +10,14 @@ pub(super) fn ensure_candidate_repository_identity(
     repository_root: &Path,
     candidate: &CandidateWorkspace,
 ) -> Result<(), GitError> {
-    let marker = candidate.path().join(".git");
+    ensure_linked_worktree_identity(repository_root, candidate.path())
+}
+
+pub(super) fn ensure_linked_worktree_identity(
+    repository_root: &Path,
+    worktree: &Path,
+) -> Result<(), GitError> {
+    let marker = worktree.join(".git");
     let metadata = fs::symlink_metadata(&marker).map_err(|source| GitError::Io {
         operation: "inspect candidate Git marker",
         path: marker.clone(),
@@ -23,16 +30,16 @@ pub(super) fn ensure_candidate_repository_identity(
     }
 
     let top_level = canonical_git_path(
-        candidate.path(),
+        worktree,
         "resolve candidate worktree root",
         "--show-toplevel",
     )?;
-    if top_level != candidate.path() {
+    if top_level != worktree {
         return Err(GitError::CandidateRepositoryMismatch {
             detail: format!(
                 "worktree root `{}` differs from `{}`",
                 top_level.display(),
-                candidate.path().display()
+                worktree.display()
             ),
         });
     }
@@ -43,7 +50,7 @@ pub(super) fn ensure_candidate_repository_identity(
         "--git-common-dir",
     )?;
     let actual_common = canonical_git_path(
-        candidate.path(),
+        worktree,
         "resolve candidate common directory",
         "--git-common-dir",
     )?;
@@ -57,7 +64,7 @@ pub(super) fn ensure_candidate_repository_identity(
         });
     }
 
-    let admin = candidate_admin_directory(candidate, &marker)?;
+    let admin = candidate_admin_directory(worktree, &marker)?;
     if !admin.starts_with(expected_common.join("worktrees")) {
         return Err(GitError::CandidateRepositoryMismatch {
             detail: format!(
@@ -94,15 +101,12 @@ fn canonical_git_path(
     canonicalize_existing(Path::new(&value), operation)
 }
 
-fn candidate_admin_directory(
-    candidate: &CandidateWorkspace,
-    marker: &Path,
-) -> Result<PathBuf, GitError> {
+fn candidate_admin_directory(worktree: &Path, marker: &Path) -> Result<PathBuf, GitError> {
     let value = read_gitdir_value(marker, "read candidate Git marker")?;
     let value = if value.is_absolute() {
         value
     } else {
-        candidate.path().join(value)
+        worktree.join(value)
     };
     canonicalize_existing(&value, "canonicalize candidate administrative directory")
 }

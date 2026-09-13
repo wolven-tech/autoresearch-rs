@@ -13,6 +13,84 @@ const DIAGNOSTIC_LIMIT: usize = 8 * 1024;
 pub struct GitRepository;
 
 impl GitRepository {
+    /// Reads exact sole parent and changed paths of one retained candidate
+    /// commit. Git queries are read-only and NUL-delimited; unsafe paths fail.
+    ///
+    /// # Errors
+    ///
+    /// Rejects merge/root commits, malformed paths, or inconsistent identity.
+    pub fn read_candidate_parent_and_paths(
+        &self,
+        snapshot: &RepositorySnapshot,
+        commit: &CommitId,
+    ) -> Result<(CommitId, Vec<RepoPath>), GitError> {
+        let ancestry = git_text(
+            snapshot.root(),
+            "read candidate parent",
+            &["rev-list", "--parents", "-n", "1", commit.as_str()],
+        )?;
+        let mut fields = ancestry.split_ascii_whitespace();
+        if fields.next() != Some(commit.as_str()) {
+            return Err(GitError::CandidateTopology {
+                detail: "candidate ancestry differs from requested commit".into(),
+            });
+        }
+        let parent = fields.next().ok_or_else(|| GitError::CandidateTopology {
+            detail: "candidate has no parent commit".into(),
+        })?;
+        if fields.next().is_some() {
+            return Err(GitError::CandidateTopology {
+                detail: "candidate is a merge commit".into(),
+            });
+        }
+        let parent = CommitId::new(parent).map_err(|_| GitError::CandidateTopology {
+            detail: "candidate parent identity is invalid".into(),
+        })?;
+        let output = git_output(
+            snapshot.root(),
+            &[
+                "diff",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                "--no-ext-diff",
+                "--no-textconv",
+                parent.as_str(),
+                commit.as_str(),
+                "--",
+            ],
+        )?;
+        if !output.status.success() {
+            return Err(command_error("read candidate changed paths", &output));
+        }
+        if !output.stdout.ends_with(&[0]) {
+            return Err(GitError::CandidateTopology {
+                detail: "candidate changed paths lack NUL termination".into(),
+            });
+        }
+        let mut paths = output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+            .map(|path| {
+                std::str::from_utf8(path)
+                    .ok()
+                    .and_then(|text| RepoPath::new(text).ok())
+                    .ok_or_else(|| GitError::CandidateTopology {
+                        detail: "candidate changed path is unsafe".into(),
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        paths.sort();
+        paths.dedup();
+        if paths.is_empty() {
+            return Err(GitError::CandidateTopology {
+                detail: "candidate commit has no changed paths".into(),
+            });
+        }
+        Ok((parent, paths))
+    }
+
     /// Reads one ordinary file from frozen base commit, never caller checkout.
     /// Missing optional path returns `None`; symlink and oversized blobs fail.
     ///

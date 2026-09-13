@@ -65,6 +65,15 @@ pub fn resume_run(
                 .map(ResumeOutcome::Baseline)
         }
         RecoveryAction::PrepareCandidate { index, .. } => {
+            let snapshot = GitRepository.inspect(&stored.root, &stored.base_commit)?;
+            let lock = RunLockGuard::acquire(&snapshot, run_id)?;
+            let git = LockedGitRepository::new(&snapshot, &lock)?;
+            let run = git.open_run()?;
+            if run.head_commit().as_str() != stored.view.current_commit() {
+                return Err(RunnerError::InvalidState(
+                    "retained run ref differs from journal current commit",
+                ));
+            }
             Ok(ResumeOutcome::ReadyForCandidate { index })
         }
         RecoveryAction::EvaluateCandidate { index, .. } => {

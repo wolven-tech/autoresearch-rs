@@ -7,10 +7,11 @@
 > diff evidence). Product-web crate adds local browser and bounded accessibility
 > checks, frozen Lighthouse report import, local SEO/GEO diagnostics, and an
 > explicit-authority read-only HTTPS probe. CLI ships `init`, `doctor`,
-> exact-commit `baseline`, and one-candidate-at-a-time `run` with manual or
-> allowlisted local-command mutation. Standalone report and broad autonomous
-> orchestration remain unfinished. Original Python implementation remains below
-> and runnable unchanged.
+> exact-commit `baseline`, one-candidate-at-a-time `run`, journal `resume`,
+> read-only `status`, independent kept-commit `verify`, and stable-boundary
+> `stop`. Standalone report and broad autonomous orchestration remain
+> unfinished. Original Python implementation remains below and runnable
+> unchanged.
 
 ## Rust foundation quick start
 
@@ -25,6 +26,9 @@ cargo run -p autoresearch-cli -- --repository /path/to/repository baseline
 cargo run -p autoresearch-cli -- --repository /path/to/repository run --run-id RUN_ID --mode manual
 # Edit only declared mutable paths in reported worktree, then submit:
 cargo run -p autoresearch-cli -- --repository /path/to/repository run --run-id RUN_ID --mode manual --hypothesis "one falsifiable change"
+cargo run -p autoresearch-cli -- --repository /path/to/repository status --run-id RUN_ID
+cargo run -p autoresearch-cli -- --repository /path/to/repository resume --run-id RUN_ID
+cargo run -p autoresearch-cli -- --repository /path/to/repository verify --run-id RUN_ID
 ```
 
 `init` never overwrites existing contract files. `doctor` is read-only and does
@@ -38,6 +42,12 @@ mode additionally requires `--allow-executable` matching the frozen absolute
 agent binary and refuses external authority without a separate sandbox.
 Template `git diff` evaluator is a schema example, not JSONL evidence; replace
 it with a declared evaluator before expecting a successful baseline.
+`resume` follows exact journal recovery and refuses divergent refs. `status`
+never mutates run state. `verify` requires a finalized kept candidate, reruns
+frozen evaluators in an isolated worktree, and writes a separate verification
+record containing original selection and fresh evidence. It does not reselect
+or move retained ref. `stop` records operator cancellation only between
+candidates; active candidate needs inspection or completion first.
 
 Architecture and safety decisions: [`docs/plans/2026-09-11-autoresearch-rust-platform-design.md`](docs/plans/2026-09-11-autoresearch-rust-platform-design.md).
 

@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 static EVALUATOR: OnceLock<PathBuf> = OnceLock::new();
 static MUTATOR: OnceLock<PathBuf> = OnceLock::new();
+static IMPROVING_EVALUATOR: OnceLock<PathBuf> = OnceLock::new();
 
 fn evaluator_fixture() -> &'static PathBuf {
     EVALUATOR.get_or_init(|| {
@@ -43,6 +44,25 @@ fn mutation_fixture() -> &'static PathBuf {
             .arg(source)
             .output()
             .expect("compile Rust mutation fixture");
+        assert_success(&output);
+        binary
+    })
+}
+
+fn improving_evaluator_fixture() -> &'static PathBuf {
+    IMPROVING_EVALUATOR.get_or_init(|| {
+        let binary = std::env::temp_dir().join(format!(
+            "autoresearch-cli-improving-evaluator-{}",
+            std::process::id()
+        ));
+        let source =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/improving_evaluator.rs");
+        let output = Command::new("rustc")
+            .args(["--edition=2024", "-o"])
+            .arg(&binary)
+            .arg(source)
+            .output()
+            .expect("compile Rust improving evaluator fixture");
         assert_success(&output);
         binary
     })
@@ -113,6 +133,20 @@ impl TestRepository {
             ),
         )
         .expect("set local command agent");
+    }
+
+    fn configure_improving_evaluator(&self, executable: &Path) {
+        let path = self.0.join("autoresearch.toml");
+        let manifest = fs::read_to_string(&path).expect("read configured manifest");
+        let original = evaluator_fixture().display().to_string();
+        let replacement = executable.display().to_string();
+        fs::write(
+            path,
+            manifest
+                .replace(&original, &replacement)
+                .replace("args = [\"json-numeric\"]", "args = []"),
+        )
+        .expect("set improving evaluator");
     }
 }
 
@@ -377,6 +411,187 @@ fn unbounded_manifest_budget_is_rejected_before_run_directory_creation() {
     let output = run_cli(&repository.0, &["baseline"]);
     assert_eq!(output.status.code(), Some(3));
     assert!(!repository.0.join(".autoresearch/runs").exists());
+}
+
+#[test]
+fn status_is_read_only_and_resume_recovers_incomplete_baseline() {
+    let repository = TestRepository::new();
+    assert_success(&run_cli(&repository.0, &["init"]));
+    repository.configure_evaluator();
+    repository.commit_contract();
+    let baseline = run_cli(&repository.0, &["--json", "baseline"]);
+    assert_success(&baseline);
+    let baseline: Value = serde_json::from_slice(&baseline.stdout).expect("baseline JSON");
+    let run_id = baseline["run_id"].as_str().expect("run ID");
+    let journal_path = PathBuf::from(baseline["run_directory"].as_str().expect("run directory"))
+        .join("journal.jsonl");
+    let completed_journal = fs::read_to_string(&journal_path).expect("read completed journal");
+    let first_line = completed_journal.lines().next().expect("run start");
+    fs::write(&journal_path, format!("{first_line}\n")).expect("simulate interrupted baseline");
+    let pending_journal = fs::read(&journal_path).expect("pending journal bytes");
+
+    let status = run_cli(&repository.0, &["--json", "status", "--run-id", run_id]);
+    assert_success(&status);
+    let status: Value = serde_json::from_slice(&status.stdout).expect("status JSON");
+    assert_eq!(status["recovery_action"], "capture_baseline");
+    assert_eq!(
+        fs::read(&journal_path).expect("unchanged journal"),
+        pending_journal
+    );
+    assert_eq!(git_text(&repository.0, &["status", "--porcelain=v1"]), "");
+
+    let resumed = run_cli(&repository.0, &["--json", "resume", "--run-id", run_id]);
+    assert_success(&resumed);
+    let resumed: Value = serde_json::from_slice(&resumed.stdout).expect("resume JSON");
+    assert_eq!(resumed["status"], "baseline_captured");
+    assert!(resumed["snapshot"].is_object());
+    let ready = run_cli(&repository.0, &["--json", "resume", "--run-id", run_id]);
+    assert_success(&ready);
+    let ready: Value = serde_json::from_slice(&ready.stdout).expect("ready JSON");
+    assert_eq!(ready["status"], "ready_for_candidate");
+}
+
+#[test]
+fn stop_and_resume_report_cancelled_run_without_candidate() {
+    let repository = TestRepository::new();
+    assert_success(&run_cli(&repository.0, &["init"]));
+    repository.configure_evaluator();
+    repository.commit_contract();
+    let baseline = run_cli(&repository.0, &["--json", "baseline"]);
+    assert_success(&baseline);
+    let baseline: Value = serde_json::from_slice(&baseline.stdout).expect("baseline JSON");
+    let run_id = baseline["run_id"].as_str().expect("run ID");
+    let stopped = run_cli(&repository.0, &["--json", "stop", "--run-id", run_id]);
+    assert_success(&stopped);
+    let stopped: Value = serde_json::from_slice(&stopped.stdout).expect("stop JSON");
+    assert_eq!(stopped["stop_reason"], "operator_cancelled");
+    assert_eq!(stopped["recovery_action"], "finished");
+    let resumed = run_cli(&repository.0, &["--json", "resume", "--run-id", run_id]);
+    assert_success(&resumed);
+    let resumed: Value = serde_json::from_slice(&resumed.stdout).expect("resume JSON");
+    assert_eq!(resumed["status"], "finished");
+    assert_eq!(git_text(&repository.0, &["status", "--porcelain=v1"]), "");
+}
+
+#[test]
+fn resume_rejects_diverged_retained_ref() {
+    let repository = TestRepository::new();
+    assert_success(&run_cli(&repository.0, &["init"]));
+    repository.configure_evaluator();
+    repository.commit_contract();
+    let baseline = run_cli(&repository.0, &["--json", "baseline"]);
+    assert_success(&baseline);
+    let baseline: Value = serde_json::from_slice(&baseline.stdout).expect("baseline JSON");
+    let run_id = baseline["run_id"].as_str().expect("run ID");
+    let head = git_text(&repository.0, &["rev-parse", "HEAD"]);
+    let tree = git_text(&repository.0, &["rev-parse", "HEAD^{tree}"]);
+    let foreign = git_text(
+        &repository.0,
+        &[
+            "commit-tree",
+            &tree,
+            "-p",
+            &head,
+            "-m",
+            "foreign ref advance",
+        ],
+    );
+    let branch = format!("refs/heads/autoresearch/{run_id}");
+    git(&repository.0, &["update-ref", &branch, &foreign]);
+    let result = run_cli(&repository.0, &["resume", "--run-id", run_id]);
+    assert_eq!(result.status.code(), Some(4));
+    assert!(
+        String::from_utf8_lossy(&result.stderr)
+            .contains("retained run ref differs from journal current commit")
+    );
+}
+
+#[test]
+fn verify_kept_commit_writes_fresh_evidence_without_reselection() {
+    let repository = TestRepository::new();
+    let run_id = create_kept_run(&repository, improving_evaluator_fixture());
+    let branch = format!("refs/heads/autoresearch/{run_id}");
+    let kept_commit = git_text(&repository.0, &["rev-parse", &branch]);
+    let journal = repository
+        .0
+        .join(".autoresearch/runs")
+        .join(&run_id)
+        .join("journal.jsonl");
+    let selection_journal = fs::read(&journal).expect("read selection journal");
+
+    let verified = run_cli(&repository.0, &["--json", "verify", "--run-id", &run_id]);
+    assert!(
+        verified.status.success(),
+        "verify failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&verified.stdout),
+        String::from_utf8_lossy(&verified.stderr)
+    );
+    let verified: Value = serde_json::from_slice(&verified.stdout).expect("verify JSON");
+    assert_eq!(verified["status"], "matched");
+    assert_eq!(verified["verified_commit"], kept_commit);
+    assert!(verified["selection_snapshot"].is_object());
+    assert!(verified["fresh_snapshot"].is_object());
+    assert!(verified["fresh_snapshot"]["measurements"].is_array());
+    assert!(verified["fresh_snapshot"].get("complexity").is_none());
+    let evidence_path = PathBuf::from(verified["evidence_path"].as_str().expect("evidence path"));
+    assert!(evidence_path.is_file());
+    assert_eq!(
+        fs::read(&journal).expect("journal unchanged"),
+        selection_journal
+    );
+    assert_eq!(
+        git_text(&repository.0, &["rev-parse", &branch]),
+        kept_commit
+    );
+    assert_eq!(git_text(&repository.0, &["status", "--porcelain=v1"]), "");
+}
+
+#[test]
+fn verify_reports_evaluator_unavailable_without_fabricating_fresh_score() {
+    let repository = TestRepository::new();
+    let local_binary = repository.0.join(".autoresearch/local-evaluator");
+    fs::create_dir(repository.0.join(".autoresearch")).expect("create ignored state");
+    fs::copy(improving_evaluator_fixture(), &local_binary).expect("copy isolated evaluator");
+    let run_id = create_kept_run(&repository, &local_binary);
+    fs::remove_file(&local_binary).expect("simulate evaluator unavailable");
+    let verified = run_cli(&repository.0, &["--json", "verify", "--run-id", &run_id]);
+    assert_eq!(verified.status.code(), Some(5));
+    let verified: Value = serde_json::from_slice(&verified.stdout).expect("verify JSON");
+    assert_eq!(verified["status"], "failed");
+    assert!(verified["fresh_snapshot"].is_null());
+    assert!(verified["failure"].is_object());
+    assert!(PathBuf::from(verified["evidence_path"].as_str().expect("evidence path")).is_file());
+}
+
+fn create_kept_run(repository: &TestRepository, evaluator: &Path) -> String {
+    assert_success(&run_cli(&repository.0, &["init"]));
+    repository.configure_evaluator();
+    repository.configure_improving_evaluator(evaluator);
+    repository.commit_contract();
+    let baseline = run_cli(&repository.0, &["--json", "baseline"]);
+    assert_success(&baseline);
+    let baseline: Value = serde_json::from_slice(&baseline.stdout).expect("baseline JSON");
+    let run_id = baseline["run_id"].as_str().expect("run ID");
+    let prepared = run_cli(&repository.0, &["--json", "run", "--run-id", run_id]);
+    assert_success(&prepared);
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).expect("prepared JSON");
+    let worktree = PathBuf::from(prepared["worktree"].as_str().expect("worktree"));
+    fs::write(worktree.join("src/example.rs"), "pub fn kept() {}\n").expect("edit candidate");
+    let result = run_cli(
+        &repository.0,
+        &[
+            "--json",
+            "run",
+            "--run-id",
+            run_id,
+            "--hypothesis",
+            "improve frozen score",
+        ],
+    );
+    assert_success(&result);
+    let result: Value = serde_json::from_slice(&result.stdout).expect("candidate JSON");
+    assert_eq!(result["finalization"]["outcome"], "kept");
+    run_id.into()
 }
 
 #[test]

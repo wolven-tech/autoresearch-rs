@@ -24,8 +24,8 @@ timeout, hard gate, and objective metric in frozen manifest, then call
 `ProcessLimits`. Do not parse free-form stdout as a score. SDK never converts
 an evaluator failure into a pass or numeric value.
 
-SDK itself does not supply `autoresearch run` or `resume`. CLI now exposes one
-bounded candidate step via `run`; a standalone `resume` CLI command and broad
-autonomous scheduling are still unfinished. SDK also does not supply an
+SDK itself does not supply `autoresearch run` or `resume`. CLI exposes one
+bounded candidate step via `run` and journal recovery via `resume`; broad
+autonomous scheduling remains unfinished. SDK also does not supply an
 OS-level sandbox. Product-web adapters and local mutation primitives exist;
 report integration and end-to-end product experiments remain open.

@@ -9,8 +9,9 @@ use autoresearch_core::{
 };
 use autoresearch_evaluator::CancellationToken;
 use autoresearch_runner::{
-    BaselineCapture, RunMutationMode, RunStep, RunnerError, SubprocessBaselineExecutor,
-    advance_run_once, capture_existing_baseline,
+    BaselineCapture, ResumeOutcome, RunMutationMode, RunStatus, RunStep, RunnerError,
+    SubprocessBaselineExecutor, VerificationEvidence, advance_run_once, capture_existing_baseline,
+    inspect_run, resume_run, stop_run, verify_kept_commit,
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
@@ -66,6 +67,30 @@ enum Action {
         #[arg(long)]
         allow_executable: Option<PathBuf>,
     },
+    /// Recover exactly next journal action without changing frozen policy.
+    Resume {
+        /// Existing frozen run identifier.
+        #[arg(long)]
+        run_id: String,
+    },
+    /// Inspect frozen run and journal without writing any state.
+    Status {
+        /// Existing frozen run identifier.
+        #[arg(long)]
+        run_id: String,
+    },
+    /// Rerun frozen evaluators at finalized kept commit, without reselection.
+    Verify {
+        /// Existing frozen run identifier.
+        #[arg(long)]
+        run_id: String,
+    },
+    /// Record operator cancellation between candidates.
+    Stop {
+        /// Existing frozen run identifier.
+        #[arg(long)]
+        run_id: String,
+    },
 }
 
 /// Operator-selected mutation boundary.
@@ -87,6 +112,14 @@ pub enum CommandReport {
     Baseline(BaselineReport),
     /// One bounded runner transition.
     Run(RunReport),
+    /// Journal-directed recovery transition.
+    Resume(ResumeReport),
+    /// Read-only journal projection.
+    Status(RunStatus),
+    /// Independent kept-commit verification evidence.
+    Verify(VerificationEvidence),
+    /// Operator cancellation at stable boundary.
+    Stop(RunStatus),
 }
 
 /// Exit status plus report, including diagnostic failure reports.
@@ -195,6 +228,36 @@ pub struct RunReport {
     /// Durable stopping reason.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<String>,
+}
+
+/// One recovered journal action; no guessed rerun or silent decision change.
+#[derive(Debug, Serialize)]
+pub struct ResumeReport {
+    /// Frozen run identifier.
+    pub run_id: String,
+    /// Stable recovery outcome.
+    pub status: String,
+    /// Candidate number when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<u32>,
+    /// Isolated candidate needing mutation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<PathBuf>,
+    /// Exact evaluated candidate commit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// Captured baseline or candidate evidence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<EvaluationSnapshot>,
+    /// Fresh failure when recovering incomplete baseline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<EvaluatorFailure>,
+    /// Frozen candidate policy result, if evaluated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision: Option<CandidateDecision>,
+    /// Confirmed Git side effect, if finalized.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finalization: Option<CandidateFinalization>,
 }
 
 /// Command execution failure.
@@ -331,13 +394,72 @@ pub fn execute(cli: &Cli) -> Result<Execution, AppError> {
             hypothesis.as_deref(),
             allow_executable.as_deref(),
         )?),
+        Action::Resume { run_id } => CommandReport::Resume(resume_once(&cli.repository, run_id)?),
+        Action::Status { run_id } => CommandReport::Status(inspect_run(&cli.repository, run_id)?),
+        Action::Verify { run_id } => CommandReport::Verify(verify_kept_commit(
+            &cli.repository,
+            run_id,
+            &evaluator_executor()?,
+        )?),
+        Action::Stop { run_id } => CommandReport::Stop(stop_run(&cli.repository, run_id)?),
     };
     let exit_code = match &report {
         CommandReport::Doctor(report) if !report.ready => EXIT_ENVIRONMENT,
         CommandReport::Baseline(report) if report.failure.is_some() => EXIT_FAILURE,
+        CommandReport::Resume(report) if report.failure.is_some() => EXIT_FAILURE,
+        CommandReport::Verify(report) if report.status != "matched" => EXIT_FAILURE,
         _ => 0,
     };
     Ok(Execution { report, exit_code })
+}
+
+fn resume_once(repository: &Path, run_id: &str) -> Result<ResumeReport, AppError> {
+    let result = resume_run(repository, run_id, &evaluator_executor()?, BTreeMap::new())?;
+    let mut report = ResumeReport {
+        run_id: run_id.into(),
+        status: String::new(),
+        index: None,
+        worktree: None,
+        commit: None,
+        snapshot: None,
+        failure: None,
+        decision: None,
+        finalization: None,
+    };
+    match result {
+        ResumeOutcome::Baseline(BaselineCapture::Captured { snapshot, .. }) => {
+            report.status = "baseline_captured".into();
+            report.snapshot = Some(snapshot);
+        }
+        ResumeOutcome::Baseline(BaselineCapture::Failed { failure, .. }) => {
+            report.status = "baseline_failed".into();
+            report.failure = Some(failure);
+        }
+        ResumeOutcome::NeedsMutation { index, worktree } => {
+            report.status = "needs_mutation".into();
+            report.index = Some(index);
+            report.worktree = Some(worktree);
+        }
+        ResumeOutcome::Candidate(outcome) => {
+            report.status = "candidate_evaluated".into();
+            report.index = Some(outcome.index);
+            report.commit = Some(outcome.commit);
+            report.snapshot = Some(outcome.snapshot);
+            report.decision = Some(outcome.decision);
+            report.finalization = Some(outcome.finalization);
+        }
+        ResumeOutcome::Finalized { index, outcome } => {
+            report.status = "candidate_finalized".into();
+            report.index = Some(index);
+            report.finalization = Some(outcome);
+        }
+        ResumeOutcome::ReadyForCandidate { index } => {
+            report.status = "ready_for_candidate".into();
+            report.index = Some(index);
+        }
+        ResumeOutcome::Finished => report.status = "finished".into(),
+    }
+    Ok(report)
 }
 
 fn evaluator_executor() -> Result<SubprocessBaselineExecutor, AppError> {
@@ -708,6 +830,30 @@ fn render(report: &CommandReport, json: bool) -> Result<(), AppError> {
             if let Some(reason) = &report.stop_reason {
                 println!("stop: {reason}");
             }
+        }
+        CommandReport::Resume(report) => {
+            println!("run: {}", report.run_id);
+            println!("status: {}", report.status);
+            if let Some(index) = report.index {
+                println!("candidate: {index}");
+            }
+            if let Some(worktree) = &report.worktree {
+                println!("worktree: {}", worktree.display());
+            }
+        }
+        CommandReport::Status(report) | CommandReport::Stop(report) => {
+            println!("run: {}", report.run_id);
+            println!("current commit: {}", report.current_commit);
+            println!("recovery: {}", report.recovery_action);
+            if let Some(reason) = &report.stop_reason {
+                println!("stop: {reason}");
+            }
+        }
+        CommandReport::Verify(report) => {
+            println!("run: {}", report.run_id);
+            println!("verified commit: {}", report.verified_commit);
+            println!("fresh verification: {}", report.status);
+            println!("evidence: {}", report.evidence_path.display());
         }
     }
     Ok(())

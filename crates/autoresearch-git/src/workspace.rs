@@ -132,82 +132,89 @@ impl<'a> LockedGitRepository<'a> {
                 detail: "baseline requires retained ref at base commit".into(),
             });
         }
+        self.prepare_evaluation_worktree(run, "baseline", run.base_commit())
+    }
+
+    /// Creates or validates exact-current-commit detached worktree for an
+    /// independent post-selection verification. Never moves retained ref.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale run, foreign/dirty worktree, or commit mismatch.
+    pub fn prepare_verification(&self, run: &RunWorkspace) -> Result<PathBuf, GitError> {
+        self.ensure_run_current(run)?;
+        let name = format!("verification-{}", run.head_commit());
+        self.prepare_evaluation_worktree(run, &name, run.head_commit())
+    }
+
+    fn prepare_evaluation_worktree(
+        &self,
+        run: &RunWorkspace,
+        name: &str,
+        commit: &CommitId,
+    ) -> Result<PathBuf, GitError> {
         let state = self.snapshot.root().join(".autoresearch");
         let worktrees = state.join("worktrees");
         let run_worktrees = worktrees.join(run.run_id().as_str());
         for path in [&state, &worktrees, &run_worktrees] {
             ensure_real_directory(path)?;
         }
-        let baseline = run_worktrees.join("baseline");
-        match fs::symlink_metadata(&baseline) {
+        let worktree = run_worktrees.join(name);
+        match fs::symlink_metadata(&worktree) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let args = [
                     OsString::from("worktree"),
                     OsString::from("add"),
                     OsString::from("--detach"),
-                    baseline.as_os_str().to_owned(),
-                    OsString::from(run.base_commit().as_str()),
+                    worktree.as_os_str().to_owned(),
+                    OsString::from(commit.as_str()),
                 ];
-                git_os_text(self.snapshot.root(), "create baseline worktree", &args)?;
+                git_os_text(self.snapshot.root(), "create evaluation worktree", &args)?;
                 let args = [
                     OsString::from("worktree"),
                     OsString::from("lock"),
                     OsString::from("--reason"),
-                    OsString::from(format!("autoresearch:{}:baseline", run.run_id())),
-                    baseline.as_os_str().to_owned(),
+                    OsString::from(format!("autoresearch:{}:{name}", run.run_id())),
+                    worktree.as_os_str().to_owned(),
                 ];
-                git_os_text(self.snapshot.root(), "lock baseline worktree", &args)?;
+                git_os_text(self.snapshot.root(), "lock evaluation worktree", &args)?;
             }
             Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
             Ok(_) => {
                 return Err(GitError::UnsafeWorktreePath {
-                    path: baseline,
-                    reason: "baseline path must be a real directory",
+                    path: worktree,
+                    reason: "evaluation path must be a real directory",
                 });
             }
             Err(error) => {
                 return Err(GitError::Io {
-                    operation: "inspect baseline worktree",
-                    path: baseline,
+                    operation: "inspect evaluation worktree",
+                    path: worktree,
                     source: error,
                 });
             }
         }
-        let canonical = fs::canonicalize(&baseline).map_err(|source| GitError::Io {
-            operation: "canonicalize baseline worktree",
-            path: baseline.clone(),
+        let canonical = fs::canonicalize(&worktree).map_err(|source| GitError::Io {
+            operation: "canonicalize evaluation worktree",
+            path: worktree.clone(),
             source,
         })?;
-        if canonical != baseline {
+        if canonical != worktree {
             return Err(GitError::UnsafeWorktreePath {
-                path: baseline,
-                reason: "baseline worktree escaped deterministic path",
+                path: worktree,
+                reason: "evaluation worktree escaped deterministic path",
             });
         }
-        let marker = baseline.join(".git");
-        let marker_meta = fs::symlink_metadata(&marker).map_err(|source| GitError::Io {
-            operation: "inspect baseline Git marker",
-            path: marker,
-            source,
-        })?;
-        if !marker_meta.is_file() || marker_meta.file_type().is_symlink() {
-            return Err(GitError::UnsafeWorktreePath {
-                path: baseline,
-                reason: "baseline is not a registered detached Git worktree",
-            });
-        }
-        ensure_detached(&baseline)?;
-        let head = resolve_commit(&baseline, "resolve baseline HEAD", "HEAD")?;
-        if head != *run.base_commit() {
+        identity::ensure_linked_worktree_identity(self.snapshot.root(), &worktree)?;
+        ensure_detached(&worktree)?;
+        let head = resolve_commit(&worktree, "resolve evaluation HEAD", "HEAD")?;
+        if head != *commit {
             return Err(GitError::CandidateTopology {
-                detail: format!(
-                    "baseline HEAD `{head}` differs from base `{}`",
-                    run.base_commit()
-                ),
+                detail: format!("evaluation HEAD `{head}` differs from frozen commit `{commit}`"),
             });
         }
-        ensure_candidate_clean(&baseline)?;
-        Ok(baseline)
+        ensure_candidate_clean(&worktree)?;
+        Ok(worktree)
     }
 
     /// Creates and Git-locks detached candidate worktree at retained head.

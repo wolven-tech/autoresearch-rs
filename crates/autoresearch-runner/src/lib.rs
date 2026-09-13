@@ -7,6 +7,8 @@ mod mutation;
 mod resume;
 mod run;
 mod schedule;
+mod status;
+mod verify;
 
 pub use baseline::{
     BaselineCapture, BaselineExecutor, RunnerError, SubprocessBaselineExecutor,
@@ -22,3 +24,5 @@ pub use run::{RunMutationMode, RunStep, advance_run_once};
 pub use schedule::{
     CandidateAttempt, ScheduleError, ScheduleReport, StopReason, run_serial_candidates,
 };
+pub use status::{RunStatus, inspect_run, stop_run};
+pub use verify::{FreshEvaluation, VerificationEvidence, verify_kept_commit};
