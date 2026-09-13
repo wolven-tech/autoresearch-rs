@@ -1,0 +1,5 @@
+# Fragment only. Use a reviewed local executable that reads request JSON.
+[agent]
+program = "/opt/approved/bin/local-mutation-agent"
+args = ["--request-jsonl", "-"]
+timeout_seconds = 600

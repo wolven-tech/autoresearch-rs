@@ -54,6 +54,8 @@ pub struct MutationRequest {
     cancellation_id: String,
     #[serde(skip)]
     boundary: MutationBoundary,
+    #[serde(skip)]
+    manifest_sha256: String,
 }
 
 /// Invalid request or unsafe manual submission.
@@ -172,6 +174,7 @@ impl MutationRequest {
             hypothesis: hypothesis.trim().into(),
             cancellation_id: cancellation_id.into(),
             boundary: manifest.scope().clone(),
+            manifest_sha256: frozen_identity.manifest.sha256.clone(),
         })
     }
 
@@ -179,6 +182,18 @@ impl MutationRequest {
     #[must_use]
     pub const fn boundary(&self) -> &MutationBoundary {
         &self.boundary
+    }
+
+    /// Checks manifest supplied at execution against request source identity.
+    #[must_use]
+    pub fn matches_manifest(&self, manifest: &ValidatedManifest) -> bool {
+        FrozenIdentity::capture(
+            manifest,
+            self.frozen_rubric.program.as_bytes(),
+            &BTreeMap::new(),
+            None,
+        )
+        .is_ok_and(|identity| identity.manifest.sha256 == self.manifest_sha256)
     }
 }
 

@@ -1,0 +1,5 @@
+# Fragment only. Requires separately reviewed executable and trusted sandbox.
+[agent]
+program = "/opt/approved/bin/claude"
+args = ["--print", "--tools", "Read,Edit"]
+timeout_seconds = 600

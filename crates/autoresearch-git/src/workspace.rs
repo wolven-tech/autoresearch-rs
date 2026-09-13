@@ -30,6 +30,28 @@ impl<'a> LockedGitRepository<'a> {
         self.snapshot.root()
     }
 
+    /// Proves candidate still belongs to locked run and starts clean at parent.
+    ///
+    /// # Errors
+    ///
+    /// Rejects foreign/stale worktree identity, attached branch, changed HEAD,
+    /// or pre-existing candidate edits before an agent command starts.
+    pub fn validate_prepared_candidate(
+        &self,
+        run: &RunWorkspace,
+        candidate: &CandidateWorkspace,
+    ) -> Result<(), GitError> {
+        self.ensure_candidate_current(run, candidate)?;
+        identity::ensure_candidate_repository_identity(self.snapshot.root(), candidate)?;
+        let head = resolve_commit(candidate.path(), "resolve prepared candidate HEAD", "HEAD")?;
+        if &head != candidate.parent_commit() {
+            return Err(GitError::CandidateTopology {
+                detail: "prepared candidate HEAD differs from retained parent".into(),
+            });
+        }
+        ensure_candidate_clean(candidate.path())
+    }
+
     /// Binds validated repository snapshot to matching live lock.
     ///
     /// # Errors

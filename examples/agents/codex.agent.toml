@@ -1,0 +1,5 @@
+# Fragment only. Requires separately reviewed executable and trusted sandbox.
+[agent]
+program = "/opt/approved/bin/codex"
+args = ["exec", "--sandbox", "workspace-write", "--ephemeral", "-"]
+timeout_seconds = 600
