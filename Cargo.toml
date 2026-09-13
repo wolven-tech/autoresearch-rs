@@ -6,6 +6,7 @@ members = [
     "crates/autoresearch-evaluator",
     "crates/autoresearch-git",
     "crates/autoresearch-product-web",
+    "crates/autoresearch-runner",
 ]
 resolver = "3"
 

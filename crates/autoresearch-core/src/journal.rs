@@ -1,6 +1,6 @@
 //! Append-only run events and pure crash-recovery replay.
 
-use crate::{CandidateDecision, Disposition, EvaluationSnapshot};
+use crate::{CandidateDecision, Disposition, EvaluationSnapshot, EvaluatorFailure};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -30,6 +30,13 @@ pub enum JournalEvent {
     BaselineCaptured {
         /// Typed evaluator output for base commit.
         snapshot: EvaluationSnapshot,
+    },
+    /// Stops before mutation when a declared baseline evaluator cannot run.
+    BaselineFailed {
+        /// Frozen evaluator that failed.
+        evaluator_id: String,
+        /// Typed, redacted evaluator failure; never a fabricated score.
+        failure: EvaluatorFailure,
     },
     /// Declares isolated candidate before mutation command runs.
     CandidatePrepared {
@@ -106,6 +113,7 @@ pub struct RunView {
     base_commit: String,
     current_commit: String,
     baseline: Option<EvaluationSnapshot>,
+    baseline_failure: Option<(String, EvaluatorFailure)>,
     completed_candidates: u32,
     stop_reason: Option<String>,
     recovery_action: RecoveryAction,
@@ -140,6 +148,12 @@ impl RunView {
     #[must_use]
     pub const fn baseline(&self) -> Option<&EvaluationSnapshot> {
         self.baseline.as_ref()
+    }
+
+    /// Returns typed baseline evaluator failure when run stopped before mutation.
+    #[must_use]
+    pub const fn baseline_failure(&self) -> Option<&(String, EvaluatorFailure)> {
+        self.baseline_failure.as_ref()
     }
 
     /// Returns number of fully finalized candidates.
@@ -311,6 +325,7 @@ struct Machine {
     base_commit: Option<String>,
     current_commit: Option<String>,
     baseline: Option<EvaluationSnapshot>,
+    baseline_failure: Option<(String, EvaluatorFailure)>,
     active: Option<CandidateStage>,
     completed_candidates: u32,
     stop_reason: Option<String>,
@@ -324,6 +339,7 @@ impl Machine {
             base_commit: None,
             current_commit: None,
             baseline: None,
+            baseline_failure: None,
             active: None,
             completed_candidates: 0,
             stop_reason: None,
@@ -360,6 +376,10 @@ impl Machine {
                 frozen_identity,
             } => self.start(base_commit, frozen_identity),
             JournalEvent::BaselineCaptured { snapshot } => self.capture_baseline(snapshot),
+            JournalEvent::BaselineFailed {
+                evaluator_id,
+                failure,
+            } => self.fail_baseline(evaluator_id, failure),
             JournalEvent::CandidatePrepared {
                 index,
                 parent_commit,
@@ -393,6 +413,21 @@ impl Machine {
             return Err(self.invalid("baseline_captured"));
         }
         self.baseline = Some(snapshot.clone());
+        Ok(())
+    }
+
+    fn fail_baseline(
+        &mut self,
+        evaluator_id: &str,
+        failure: &EvaluatorFailure,
+    ) -> Result<(), JournalError> {
+        if self.base_commit.is_none() || self.baseline.is_some() || self.active.is_some() {
+            return Err(self.invalid("baseline_failed"));
+        }
+        let evaluator_id = checked(evaluator_id, "evaluator_id")?.to_owned();
+        checked(&failure.detail, "baseline_failure_detail")?;
+        self.baseline_failure = Some((evaluator_id, failure.clone()));
+        self.stop_reason = Some("baseline_evaluator_failure".into());
         Ok(())
     }
 
@@ -575,6 +610,7 @@ impl Machine {
             base_commit,
             current_commit,
             baseline: self.baseline,
+            baseline_failure: self.baseline_failure,
             completed_candidates: self.completed_candidates,
             stop_reason: self.stop_reason,
             recovery_action,
@@ -594,6 +630,7 @@ const fn event_name(event: &JournalEvent) -> &'static str {
     match event {
         JournalEvent::RunStarted { .. } => "run_started",
         JournalEvent::BaselineCaptured { .. } => "baseline_captured",
+        JournalEvent::BaselineFailed { .. } => "baseline_failed",
         JournalEvent::CandidatePrepared { .. } => "candidate_prepared",
         JournalEvent::CandidateDecisionRecorded { .. } => "candidate_decision_recorded",
         JournalEvent::CandidateFinalized { .. } => "candidate_finalized",
@@ -604,7 +641,9 @@ const fn event_name(event: &JournalEvent) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Complexity, DecisionReason, Measurement, MetricDirection, NumericMetricKind};
+    use crate::{
+        Complexity, DecisionReason, FailureClass, Measurement, MetricDirection, NumericMetricKind,
+    };
 
     fn snapshot(value: f64) -> EvaluationSnapshot {
         EvaluationSnapshot {
@@ -940,5 +979,38 @@ mod tests {
             replay_journal(&entries),
             Err(JournalError::Blank("frozen_identity"))
         );
+    }
+
+    #[test]
+    fn baseline_failure_is_typed_terminal_and_never_a_snapshot() {
+        let mut entries = started();
+        let failure = EvaluatorFailure {
+            class: FailureClass::Timeout,
+            detail: "declared evaluator timed out".into(),
+        };
+        entries.push(entry(
+            1,
+            JournalEvent::BaselineFailed {
+                evaluator_id: "tests".into(),
+                failure: failure.clone(),
+            },
+        ));
+        let ReplayState::Run(view) = replay_journal(&entries).expect("typed failure journal")
+        else {
+            panic!("run expected")
+        };
+        assert!(view.baseline().is_none());
+        assert_eq!(view.baseline_failure(), Some(&("tests".into(), failure)));
+        assert_eq!(view.recovery_action(), &RecoveryAction::Finished);
+        entries.push(entry(
+            2,
+            JournalEvent::BaselineCaptured {
+                snapshot: snapshot(1.0),
+            },
+        ));
+        assert!(matches!(
+            replay_journal(&entries),
+            Err(JournalError::InvalidTransition { .. })
+        ));
     }
 }

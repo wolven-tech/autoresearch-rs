@@ -67,6 +67,14 @@ pub enum GitError {
         /// Stable operation description.
         operation: &'static str,
     },
+    /// Frozen source is not an ordinary Git blob or exceeds configured cap.
+    #[error("unsafe frozen source blob `{path}`: {reason}")]
+    UnsafeSourceBlob {
+        /// Repository-relative source path.
+        path: String,
+        /// Stable refusal reason.
+        reason: &'static str,
+    },
     /// Git returned an unexpected boolean.
     #[error("Git operation `{operation}` returned unexpected value `{value}`")]
     UnexpectedValue {

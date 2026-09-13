@@ -1,7 +1,7 @@
 //! Canonical identities for frozen experiment inputs.
 
 use crate::ValidatedManifest;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -20,7 +20,8 @@ pub enum IdentityError {
 }
 
 /// Named SHA-256 digest for one frozen input.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InputDigest {
     /// Stable input name.
     pub name: String,
@@ -29,7 +30,8 @@ pub struct InputDigest {
 }
 
 /// Aggregate and component identities captured before mutation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FrozenIdentity {
     /// Aggregate SHA-256 covering every component and presence marker.
     pub aggregate_sha256: String,

@@ -160,6 +160,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "autoresearch-runner"
+version = "0.1.0"
+dependencies = [
+ "autoresearch-config",
+ "autoresearch-core",
+ "autoresearch-evaluator",
+ "autoresearch-git",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

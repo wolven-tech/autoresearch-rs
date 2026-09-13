@@ -89,6 +89,32 @@ fn open_run_creates_idempotent_ref_without_moving_caller() {
 }
 
 #[test]
+fn baseline_worktree_is_exact_detached_reusable_and_never_moves_caller() {
+    let repository = TestRepository::new();
+    let snapshot = repository.snapshot();
+    let before = (repository.branch(), repository.head(), repository.status());
+    let lock = RunLockGuard::acquire(&snapshot, "run-baseline").expect("acquire lock");
+    let adapter = LockedGitRepository::new(&snapshot, &lock).expect("bind adapter");
+    let run = adapter.open_run().expect("open run");
+    let baseline = adapter.prepare_baseline(&run).expect("prepare baseline");
+    assert_eq!(
+        adapter.prepare_baseline(&run).expect("reopen baseline"),
+        baseline
+    );
+    assert_eq!(
+        git_text(&baseline, &["rev-parse", "HEAD"]),
+        snapshot.base_commit().as_str()
+    );
+    assert!(git_text(&baseline, &["branch", "--show-current"]).is_empty());
+    assert_eq!(
+        (repository.branch(), repository.head(), repository.status()),
+        before
+    );
+    fs::write(baseline.join("tracked.txt"), "mutated\n").expect("dirty baseline");
+    assert!(adapter.prepare_baseline(&run).is_err());
+}
+
+#[test]
 fn open_run_resumes_descendant_but_rejects_divergence() {
     let repository = TestRepository::new();
     let snapshot = repository.snapshot();

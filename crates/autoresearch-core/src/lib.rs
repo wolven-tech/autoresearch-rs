@@ -5,6 +5,7 @@
 
 mod containment;
 mod decision;
+mod failure;
 mod journal;
 mod metric;
 mod recovery;
@@ -19,6 +20,7 @@ pub use decision::{
     CandidateDecision, Complexity, DecisionError, DecisionReason, Disposition, EvaluationSnapshot,
     TieBreaker, select_candidate,
 };
+pub use failure::{EvaluatorFailure, FailureClass};
 pub use journal::{
     CandidateFinalization, JournalEntry, JournalError, JournalEvent, RecoveryAction, ReplayState,
     RunView, replay_journal,

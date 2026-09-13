@@ -1,6 +1,6 @@
 //! Integration coverage for read-only repository inspection.
 
-use autoresearch_core::RepositoryInspector;
+use autoresearch_core::{RepoPath, RepositoryInspector};
 use autoresearch_git::{GitError, GitRepository};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -67,6 +67,33 @@ fn inspects_clean_repository_without_modifying_caller_checkout() {
     assert_eq!(snapshot.base_commit().as_str(), repository.head());
     assert_eq!(snapshot.head_commit().as_str(), repository.head());
     assert_eq!(repository.status(), before);
+}
+
+#[test]
+fn reads_only_exact_ordinary_commit_blob_with_size_cap() {
+    let repository = TestRepository::new(true);
+    let snapshot = GitRepository.inspect(&repository.0, "HEAD").expect("inspect");
+    let path = RepoPath::new("tracked.txt").expect("path");
+    assert_eq!(
+        GitRepository
+            .read_blob_at_commit(&snapshot, &path, 9)
+            .expect("read"),
+        Some(b"baseline\n".to_vec())
+    );
+    assert!(matches!(
+        GitRepository.read_blob_at_commit(&snapshot, &path, 1),
+        Err(GitError::UnsafeSourceBlob { .. })
+    ));
+    assert_eq!(
+        GitRepository
+            .read_blob_at_commit(
+                &snapshot,
+                &RepoPath::new("absent.txt").expect("path"),
+                8
+            )
+            .expect("missing"),
+        None
+    );
 }
 
 #[test]

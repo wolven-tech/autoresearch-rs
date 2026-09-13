@@ -1,0 +1,19 @@
+[package]
+name = "autoresearch-runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+autoresearch-config = { path = "../autoresearch-config" }
+autoresearch-core = { path = "../autoresearch-core" }
+autoresearch-evaluator = { path = "../autoresearch-evaluator" }
+autoresearch-git = { path = "../autoresearch-git" }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

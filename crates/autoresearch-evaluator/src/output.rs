@@ -1,6 +1,7 @@
 //! Native evaluator result types and shared structural validation.
 
 use crate::EvaluationContext;
+pub use autoresearch_core::{EvaluatorFailure, FailureClass};
 use autoresearch_core::{Measurement, MetricKind, RepoPath};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -35,38 +36,6 @@ pub struct Warning {
     /// Stable warning code.
     pub code: String,
     /// Human-readable supporting detail.
-    pub detail: String,
-}
-
-/// Evaluator failure class, distinct from a legitimate failed hard gate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FailureClass {
-    /// Evaluator explicitly reported inability to evaluate.
-    Reported,
-    /// Executable could not start.
-    Spawn,
-    /// Executable exited unsuccessfully.
-    NonZeroExit,
-    /// Executable exceeded its deadline.
-    Timeout,
-    /// Invocation was cancelled.
-    Cancelled,
-    /// Captured output exceeded configured limit.
-    OutputLimit,
-    /// Process response violated wire protocol.
-    Protocol,
-    /// Output did not match frozen declaration or provenance.
-    Validation,
-}
-
-/// Typed failure returned instead of fabricated metrics or gate passes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EvaluatorFailure {
-    /// Stable class for runner stop policy and reports.
-    pub class: FailureClass,
-    /// Bounded, redacted diagnostic detail.
     pub detail: String,
 }
 

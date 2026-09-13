@@ -1,7 +1,7 @@
 //! Read-only Git repository inspection.
 
 use crate::GitError;
-use autoresearch_core::{CommitId, RepositoryInspector, RepositorySnapshot};
+use autoresearch_core::{CommitId, RepoPath, RepositoryInspector, RepositorySnapshot};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -11,6 +11,114 @@ const DIAGNOSTIC_LIMIT: usize = 8 * 1024;
 /// System Git implementation of read-only repository validation.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GitRepository;
+
+impl GitRepository {
+    /// Reads one ordinary file from frozen base commit, never caller checkout.
+    /// Missing optional path returns `None`; symlink and oversized blobs fail.
+    ///
+    /// # Errors
+    ///
+    /// Rejects malformed Git metadata, non-file tree entries, and oversized
+    /// content before asking Git to return blob bytes.
+    pub fn read_blob_at_commit(
+        &self,
+        snapshot: &RepositorySnapshot,
+        path: &RepoPath,
+        max_bytes: u64,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        let commit = snapshot.base_commit().as_str();
+        let tree = git_output(
+            snapshot.root(),
+            &["ls-tree", "-z", "--full-tree", commit, "--", path.as_str()],
+        )?;
+        if !tree.status.success() {
+            return Err(command_error("read frozen tree entry", &tree));
+        }
+        if tree.stdout.is_empty() {
+            return Ok(None);
+        }
+        let mut records = tree
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|r| !r.is_empty());
+        let record = records.next().ok_or_else(|| GitError::UnsafeSourceBlob {
+            path: path.as_str().into(),
+            reason: "tree entry missing",
+        })?;
+        let (metadata, actual_path) =
+            record
+                .split_once_byte(b'\t')
+                .ok_or_else(|| GitError::UnsafeSourceBlob {
+                    path: path.as_str().into(),
+                    reason: "malformed tree entry",
+                })?;
+        if records.next().is_some() || actual_path != path.as_str().as_bytes() {
+            return Err(GitError::UnsafeSourceBlob {
+                path: path.as_str().into(),
+                reason: "tree entry did not match exact path",
+            });
+        }
+        let metadata = std::str::from_utf8(metadata).map_err(|_| GitError::UnsafeSourceBlob {
+            path: path.as_str().into(),
+            reason: "tree metadata is not UTF-8",
+        })?;
+        let mut fields = metadata.split_whitespace();
+        let mode = fields.next();
+        let kind = fields.next();
+        let object = fields.next();
+        if !matches!(mode, Some("100644" | "100755"))
+            || kind != Some("blob")
+            || fields.next().is_some()
+        {
+            return Err(GitError::UnsafeSourceBlob {
+                path: path.as_str().into(),
+                reason: "source is not an ordinary tracked file",
+            });
+        }
+        let object = object.ok_or_else(|| GitError::UnsafeSourceBlob {
+            path: path.as_str().into(),
+            reason: "tree entry has no object ID",
+        })?;
+        let size = git_text(
+            snapshot.root(),
+            "measure frozen source blob",
+            &["cat-file", "-s", object],
+        )?
+        .parse::<u64>()
+        .map_err(|_| GitError::UnsafeSourceBlob {
+            path: path.as_str().into(),
+            reason: "blob size is invalid",
+        })?;
+        if size > max_bytes {
+            return Err(GitError::UnsafeSourceBlob {
+                path: path.as_str().into(),
+                reason: "blob exceeds byte limit",
+            });
+        }
+        let blob = git_output(snapshot.root(), &["cat-file", "blob", object])?;
+        if !blob.status.success() {
+            return Err(command_error("read frozen source blob", &blob));
+        }
+        if u64::try_from(blob.stdout.len()).ok() != Some(size) {
+            return Err(GitError::UnsafeSourceBlob {
+                path: path.as_str().into(),
+                reason: "blob changed size during read",
+            });
+        }
+        Ok(Some(blob.stdout))
+    }
+}
+
+trait SplitOnceByte {
+    fn split_once_byte(&self, separator: u8) -> Option<(&[u8], &[u8])>;
+}
+
+impl SplitOnceByte for [u8] {
+    fn split_once_byte(&self, separator: u8) -> Option<(&[u8], &[u8])> {
+        let index = self.iter().position(|byte| *byte == separator)?;
+        Some((&self[..index], &self[index + 1..]))
+    }
+}
 
 impl RepositoryInspector for GitRepository {
     type Error = GitError;
