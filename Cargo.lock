@@ -93,6 +93,8 @@ version = "0.1.0"
 dependencies = [
  "autoresearch-config",
  "autoresearch-core",
+ "autoresearch-evaluator",
+ "autoresearch-runner",
  "clap",
  "serde",
  "serde_json",

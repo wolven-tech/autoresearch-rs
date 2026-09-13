@@ -84,6 +84,9 @@ pub(crate) fn capture(repository: &Path) -> Result<BaselineReport, AppError> {
         frozen_identity: identity.aggregate_sha256,
         next_action: "capture_baseline".into(),
         evidence_status: "pending evaluator evidence".into(),
+        snapshot: None,
+        failed_evaluator: None,
+        failure: None,
     })
 }
 

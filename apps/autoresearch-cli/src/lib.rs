@@ -4,8 +4,17 @@ mod baseline;
 mod template;
 
 use autoresearch_config::{IdentityError, ManifestError, ValidatedManifest};
-use clap::{Parser, Subcommand};
+use autoresearch_core::{
+    CandidateDecision, CandidateFinalization, EvaluationSnapshot, EvaluatorFailure,
+};
+use autoresearch_evaluator::CancellationToken;
+use autoresearch_runner::{
+    BaselineCapture, RunMutationMode, RunStep, RunnerError, SubprocessBaselineExecutor,
+    advance_run_once, capture_existing_baseline,
+};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
@@ -40,8 +49,30 @@ enum Action {
     Init,
     /// Validate repository, contract, and local executables without running them.
     Doctor,
-    /// Freeze clean inputs and open run journal; evaluator evidence remains pending.
+    /// Freeze clean inputs, then evaluate declared baseline against exact commit.
     Baseline,
+    /// Advance one bounded candidate in isolated run worktree.
+    Run {
+        /// Existing frozen run identifier from baseline report.
+        #[arg(long)]
+        run_id: String,
+        /// Manual edits or explicitly allowlisted local command.
+        #[arg(long, value_enum, default_value_t = CliMutationMode::Manual)]
+        mode: CliMutationMode,
+        /// Testable candidate hypothesis; required when submitting mutation.
+        #[arg(long)]
+        hypothesis: Option<String>,
+        /// Exact absolute executable authorized for command mode only.
+        #[arg(long)]
+        allow_executable: Option<PathBuf>,
+    },
+}
+
+/// Operator-selected mutation boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliMutationMode {
+    Manual,
+    Command,
 }
 
 /// Successful command output.
@@ -54,6 +85,8 @@ pub enum CommandReport {
     Doctor(DoctorReport),
     /// Baseline freeze result.
     Baseline(BaselineReport),
+    /// One bounded runner transition.
+    Run(RunReport),
 }
 
 /// Exit status plus report, including diagnostic failure reports.
@@ -108,7 +141,7 @@ pub struct DoctorReport {
     pub checks: Vec<DoctorCheck>,
 }
 
-/// Frozen run-start result. No evaluator result exists yet.
+/// Frozen run and genuine declared-evaluator result.
 #[derive(Debug, Serialize)]
 pub struct BaselineReport {
     /// Unique run identifier.
@@ -123,6 +156,45 @@ pub struct BaselineReport {
     pub next_action: String,
     /// Explicit evidence state.
     pub evidence_status: String,
+    /// Exact validated baseline snapshot when all evaluators pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<EvaluationSnapshot>,
+    /// Frozen evaluator that failed, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_evaluator: Option<String>,
+    /// Typed redacted failure, never fabricated score.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<EvaluatorFailure>,
+}
+
+/// One serial candidate transition with exact evidence if evaluated.
+#[derive(Debug, Serialize)]
+pub struct RunReport {
+    /// Frozen run identifier.
+    pub run_id: String,
+    /// Stable machine-readable transition.
+    pub status: String,
+    /// Candidate number when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<u32>,
+    /// Isolated candidate worktree for manual editing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<PathBuf>,
+    /// Exact evaluated candidate commit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// Complete frozen evaluator snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<EvaluationSnapshot>,
+    /// Frozen lexicographic decision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision: Option<CandidateDecision>,
+    /// Confirmed Git finalization.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finalization: Option<CandidateFinalization>,
+    /// Durable stopping reason.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
 }
 
 /// Command execution failure.
@@ -166,16 +238,40 @@ pub enum AppError {
     /// Unique run directory could not be allocated safely.
     #[error("could not allocate unique run id")]
     RunIdCollision,
+    /// Runner refused unsafe or incomplete frozen state.
+    #[error(transparent)]
+    Runner(#[from] RunnerError),
+    /// Evaluator failed after run directory was frozen.
+    #[error("baseline run {run_id} could not evaluate: {source}")]
+    BaselineExecution {
+        /// Frozen run identifier for explicit recovery.
+        run_id: String,
+        /// Runner infrastructure refusal.
+        #[source]
+        source: RunnerError,
+    },
+    /// Command mode lacks separate explicit executable authority.
+    #[error("command mode requires --allow-executable with exact absolute binary path")]
+    MissingExecutableAuthority,
+    /// Manual mode cannot accept command executable authority.
+    #[error("--allow-executable applies only to command mode")]
+    UnexpectedExecutableAuthority,
 }
 
 impl AppError {
     const fn exit_code(&self) -> u8 {
         match self {
-            Self::Manifest(_) | Self::Identity(_) => EXIT_CONFIG,
+            Self::Manifest(_)
+            | Self::Identity(_)
+            | Self::MissingExecutableAuthority
+            | Self::UnexpectedExecutableAuthority => EXIT_CONFIG,
+            Self::Runner(RunnerError::CandidateEvaluator { .. }) => EXIT_FAILURE,
             Self::Git(_)
             | Self::BlankProgram
             | Self::DirtyFrozenInputs(_)
-            | Self::RunStateNotIgnored => EXIT_ENVIRONMENT,
+            | Self::RunStateNotIgnored
+            | Self::Runner(_)
+            | Self::BaselineExecution { .. } => EXIT_ENVIRONMENT,
             Self::Io { .. } | Self::Json(_) | Self::ClockBeforeEpoch | Self::RunIdCollision => {
                 EXIT_FAILURE
             }
@@ -222,13 +318,119 @@ pub fn execute(cli: &Cli) -> Result<Execution, AppError> {
     let report = match &cli.command {
         Action::Init => CommandReport::Init(initialize(&cli.repository)?),
         Action::Doctor => CommandReport::Doctor(doctor(&cli.repository)),
-        Action::Baseline => CommandReport::Baseline(baseline::capture(&cli.repository)?),
+        Action::Baseline => CommandReport::Baseline(capture_baseline(&cli.repository)?),
+        Action::Run {
+            run_id,
+            mode,
+            hypothesis,
+            allow_executable,
+        } => CommandReport::Run(run_once(
+            &cli.repository,
+            run_id,
+            *mode,
+            hypothesis.as_deref(),
+            allow_executable.as_deref(),
+        )?),
     };
     let exit_code = match &report {
         CommandReport::Doctor(report) if !report.ready => EXIT_ENVIRONMENT,
+        CommandReport::Baseline(report) if report.failure.is_some() => EXIT_FAILURE,
         _ => 0,
     };
     Ok(Execution { report, exit_code })
+}
+
+fn evaluator_executor() -> Result<SubprocessBaselineExecutor, AppError> {
+    SubprocessBaselineExecutor::new(1024 * 1024, 1024 * 1024, CancellationToken::default())
+        .map_err(|_| AppError::Git("evaluator output caps are invalid".into()))
+}
+
+fn capture_baseline(repository: &Path) -> Result<BaselineReport, AppError> {
+    let mut report = baseline::capture(repository)?;
+    let executor = evaluator_executor()?;
+    let outcome = capture_existing_baseline(repository, &report.run_id, &executor, BTreeMap::new())
+        .map_err(|source| AppError::BaselineExecution {
+            run_id: report.run_id.clone(),
+            source,
+        })?;
+    match outcome {
+        BaselineCapture::Captured { snapshot, .. } => {
+            report.next_action = "run".into();
+            report.evidence_status = "captured".into();
+            report.snapshot = Some(snapshot);
+        }
+        BaselineCapture::Failed {
+            evaluator_id,
+            failure,
+            ..
+        } => {
+            report.next_action = "inspect_baseline_failure".into();
+            report.evidence_status = "failed".into();
+            report.failed_evaluator = Some(evaluator_id);
+            report.failure = Some(failure);
+        }
+    }
+    Ok(report)
+}
+
+fn run_once(
+    repository: &Path,
+    run_id: &str,
+    mode: CliMutationMode,
+    hypothesis: Option<&str>,
+    allow_executable: Option<&Path>,
+) -> Result<RunReport, AppError> {
+    let mode = match (mode, allow_executable) {
+        (CliMutationMode::Manual, None) => RunMutationMode::Manual,
+        (CliMutationMode::Manual, Some(_)) => return Err(AppError::UnexpectedExecutableAuthority),
+        (CliMutationMode::Command, None) => return Err(AppError::MissingExecutableAuthority),
+        (CliMutationMode::Command, Some(executable)) => RunMutationMode::Command {
+            executable: executable.to_path_buf(),
+        },
+    };
+    let step = advance_run_once(
+        repository,
+        run_id,
+        &mode,
+        hypothesis,
+        &evaluator_executor()?,
+    )?;
+    let mut report = RunReport {
+        run_id: run_id.into(),
+        status: String::new(),
+        index: None,
+        worktree: None,
+        commit: None,
+        snapshot: None,
+        decision: None,
+        finalization: None,
+        stop_reason: None,
+    };
+    match step {
+        RunStep::AwaitingMutation { index, worktree } => {
+            report.status = "awaiting_mutation".into();
+            report.index = Some(index);
+            report.worktree = Some(worktree);
+        }
+        RunStep::Evaluated(outcome) => {
+            report.status = "evaluated".into();
+            report.index = Some(outcome.index);
+            report.commit = Some(outcome.commit);
+            report.snapshot = Some(outcome.snapshot);
+            report.decision = Some(outcome.decision);
+            report.finalization = Some(outcome.finalization);
+        }
+        RunStep::Finalized { index, outcome } => {
+            report.status = "finalized".into();
+            report.index = Some(index);
+            report.finalization = Some(outcome);
+        }
+        RunStep::Stopped { reason } => {
+            report.status = "stopped".into();
+            report.stop_reason = Some(reason);
+        }
+    }
+    Ok(report)
 }
 
 fn initialize(repository: &Path) -> Result<InitReport, AppError> {
@@ -483,6 +685,29 @@ fn render(report: &CommandReport, json: bool) -> Result<(), AppError> {
             println!("evidence: {}", report.evidence_status);
             println!("next: {}", report.next_action);
             println!("directory: {}", report.run_directory.display());
+            if let Some(snapshot) = &report.snapshot {
+                println!("snapshot: {}", serde_json::to_string(snapshot)?);
+            }
+            if let Some(failure) = &report.failure {
+                println!(
+                    "failed evaluator: {}",
+                    report.failed_evaluator.as_deref().unwrap_or("unknown")
+                );
+                println!("failure: {}", serde_json::to_string(failure)?);
+            }
+        }
+        CommandReport::Run(report) => {
+            println!("run: {}", report.run_id);
+            println!("status: {}", report.status);
+            if let Some(worktree) = &report.worktree {
+                println!("worktree: {}", worktree.display());
+            }
+            if let Some(commit) = &report.commit {
+                println!("commit: {commit}");
+            }
+            if let Some(reason) = &report.stop_reason {
+                println!("stop: {reason}");
+            }
         }
     }
     Ok(())

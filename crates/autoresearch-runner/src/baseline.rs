@@ -51,6 +51,12 @@ pub enum RunnerError {
     /// Replayed evaluator envelope failed shared structural validation.
     #[error(transparent)]
     Output(#[from] OutputError),
+    /// Mutation request or manual containment failed.
+    #[error(transparent)]
+    Mutation(#[from] crate::MutationError),
+    /// Allowlisted command mutation failed.
+    #[error(transparent)]
+    MutationCommand(#[from] crate::MutationCommandError),
     /// Candidate evaluator failed without a comparable score.
     #[error("candidate evaluator {evaluator_id} failed: {failure:?}")]
     CandidateEvaluator {
@@ -245,6 +251,8 @@ pub(crate) struct StoredRun {
     pub(crate) root: PathBuf,
     pub(crate) run_directory: PathBuf,
     pub(crate) manifest: ValidatedManifest,
+    pub(crate) program: String,
+    pub(crate) identity: FrozenIdentity,
     pub(crate) base_commit: String,
     pub(crate) entries: Vec<JournalEntry>,
     pub(crate) view: RunView,
@@ -313,6 +321,11 @@ impl StoredRun {
             ));
         }
         let base = GitRepository.inspect(&root, view.base_commit())?;
+        if base.head_commit().as_str() != view.base_commit() {
+            return Err(RunnerError::InvalidState(
+                "caller HEAD differs from frozen base commit",
+            ));
+        }
         for (source, frozen_bytes) in [
             ("autoresearch.toml", Some(manifest_source.as_slice())),
             ("program.md", Some(program.as_slice())),
@@ -331,6 +344,9 @@ impl StoredRun {
             root,
             run_directory,
             manifest,
+            program: String::from_utf8(program)
+                .map_err(|_| RunnerError::InvalidState("frozen program is not UTF-8"))?,
+            identity: stored,
             base_commit: view.base_commit().into(),
             entries,
             view: *view,

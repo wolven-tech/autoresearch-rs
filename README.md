@@ -6,11 +6,11 @@
 > contract, JSONL v1 subprocess protocol, command/Cargo gates, exact-commit
 > diff evidence). Product-web crate adds local browser and bounded accessibility
 > checks, frozen Lighthouse report import, local SEO/GEO diagnostics, and an
-> explicit-authority read-only HTTPS probe. CLI ships `init`, `doctor`, and
-> baseline freeze; automated `run`/`resume`, mutation orchestration, and
-> reporting are not shipped. Baseline output still reports evaluator evidence
-> as pending. Original Python implementation remains below and runnable
-> unchanged.
+> explicit-authority read-only HTTPS probe. CLI ships `init`, `doctor`,
+> exact-commit `baseline`, and one-candidate-at-a-time `run` with manual or
+> allowlisted local-command mutation. Standalone report and broad autonomous
+> orchestration remain unfinished. Original Python implementation remains below
+> and runnable unchanged.
 
 ## Rust foundation quick start
 
@@ -21,12 +21,23 @@ cargo run -p autoresearch-cli -- --repository /path/to/repository init
 # .autoresearch/
 cargo run -p autoresearch-cli -- --repository /path/to/repository doctor
 cargo run -p autoresearch-cli -- --repository /path/to/repository baseline
+# Use run_id returned by baseline. First manual call prepares isolated worktree.
+cargo run -p autoresearch-cli -- --repository /path/to/repository run --run-id RUN_ID --mode manual
+# Edit only declared mutable paths in reported worktree, then submit:
+cargo run -p autoresearch-cli -- --repository /path/to/repository run --run-id RUN_ID --mode manual --hypothesis "one falsifiable change"
 ```
 
 `init` never overwrites existing contract files. `doctor` is read-only and does
 not execute configured agents or evaluators. `baseline` requires clean, tracked
-control inputs and writes only under ignored `.autoresearch/runs/`. It freezes
-identity and opens journal; it does not fabricate a baseline score.
+control inputs, freezes identity under ignored `.autoresearch/`, then executes
+only declared evaluators in an exact-commit isolated worktree. A failed
+evaluator returns exit code 5 and typed failure, not a score. `run` rejects a
+changed caller HEAD or dirty caller checkout and never edits caller files.
+Manual mode stages changes only in the reported candidate worktree. Command
+mode additionally requires `--allow-executable` matching the frozen absolute
+agent binary and refuses external authority without a separate sandbox.
+Template `git diff` evaluator is a schema example, not JSONL evidence; replace
+it with a declared evaluator before expecting a successful baseline.
 
 Architecture and safety decisions: [`docs/plans/2026-09-11-autoresearch-rust-platform-design.md`](docs/plans/2026-09-11-autoresearch-rust-platform-design.md).
 

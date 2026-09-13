@@ -5,6 +5,7 @@ mod candidate;
 mod command;
 mod mutation;
 mod resume;
+mod run;
 mod schedule;
 
 pub use baseline::{
@@ -17,6 +18,7 @@ pub use mutation::{
     FrozenRubric, MutationError, MutationRequest, PriorDecision, submit_manual_candidate,
 };
 pub use resume::{ResumeOutcome, resume_run};
+pub use run::{RunMutationMode, RunStep, advance_run_once};
 pub use schedule::{
     CandidateAttempt, ScheduleError, ScheduleReport, StopReason, run_serial_candidates,
 };
