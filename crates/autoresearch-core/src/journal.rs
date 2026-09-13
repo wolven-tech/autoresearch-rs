@@ -2,6 +2,7 @@
 
 use crate::{CandidateDecision, Disposition, EvaluationSnapshot, EvaluatorFailure};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use thiserror::Error;
 
 /// Sequence-numbered event stored as one journal record.
@@ -46,6 +47,18 @@ pub enum JournalEvent {
         parent_commit: String,
         /// Relocation-independent worktree identifier.
         worktree_id: String,
+    },
+    /// Stores one completed declared evaluator output before next evaluator.
+    /// Runner revalidates opaque JSON against SDK and frozen manifest on replay.
+    CandidateEvaluatorCaptured {
+        /// Active one-based candidate number.
+        index: u32,
+        /// Frozen evaluator ID.
+        evaluator_id: String,
+        /// Exact candidate commit evaluated.
+        evaluated_commit: String,
+        /// Bounded complete evaluator output envelope.
+        output_json: String,
     },
     /// Stores evaluation and selection before Git finalization.
     CandidateDecisionRecorded {
@@ -266,6 +279,15 @@ pub enum JournalError {
     /// Finalized side effect must implement recorded decision.
     #[error("candidate finalization contradicts recorded decision")]
     FinalizationMismatch,
+    /// Same evaluator cannot complete twice for one candidate.
+    #[error("candidate evaluator `{0}` was captured more than once")]
+    DuplicateEvaluator(String),
+    /// All evaluator outputs and final decision must identify one commit.
+    #[error("candidate evaluator commit differs from decision commit")]
+    EvaluatorCommitMismatch,
+    /// Captured output exceeded bounded journal record size.
+    #[error("candidate evaluator output exceeds byte limit")]
+    EvaluatorOutputTooLarge,
     /// Candidate count exceeded representable range.
     #[error("candidate index overflow")]
     CandidateOverflow,
@@ -327,6 +349,8 @@ struct Machine {
     baseline: Option<EvaluationSnapshot>,
     baseline_failure: Option<(String, EvaluatorFailure)>,
     active: Option<CandidateStage>,
+    evaluator_commit: Option<String>,
+    completed_evaluators: BTreeSet<String>,
     completed_candidates: u32,
     stop_reason: Option<String>,
 }
@@ -341,6 +365,8 @@ impl Machine {
             baseline: None,
             baseline_failure: None,
             active: None,
+            evaluator_commit: None,
+            completed_evaluators: BTreeSet::new(),
             completed_candidates: 0,
             stop_reason: None,
         }
@@ -385,6 +411,12 @@ impl Machine {
                 parent_commit,
                 worktree_id,
             } => self.prepare(*index, parent_commit, worktree_id),
+            JournalEvent::CandidateEvaluatorCaptured {
+                index,
+                evaluator_id,
+                evaluated_commit,
+                output_json,
+            } => self.capture_evaluator(*index, evaluator_id, evaluated_commit, output_json),
             JournalEvent::CandidateDecisionRecorded {
                 index,
                 candidate_commit,
@@ -459,6 +491,44 @@ impl Machine {
         }
         let worktree_id = checked(worktree_id, "worktree_id")?.to_owned();
         self.active = Some(CandidateStage::Prepared { index, worktree_id });
+        self.evaluator_commit = None;
+        self.completed_evaluators.clear();
+        Ok(())
+    }
+
+    fn capture_evaluator(
+        &mut self,
+        index: u32,
+        evaluator_id: &str,
+        evaluated_commit: &str,
+        output_json: &str,
+    ) -> Result<(), JournalError> {
+        let Some(CandidateStage::Prepared { index: active, .. }) = &self.active else {
+            return Err(self.invalid("candidate_evaluator_captured"));
+        };
+        if index != *active {
+            return Err(JournalError::CandidateIndex {
+                expected: *active,
+                actual: index,
+            });
+        }
+        checked(evaluator_id, "evaluator_id")?;
+        checked(evaluated_commit, "evaluated_commit")?;
+        checked(output_json, "output_json")?;
+        if output_json.len() > 1024 * 1024 {
+            return Err(JournalError::EvaluatorOutputTooLarge);
+        }
+        if self
+            .evaluator_commit
+            .as_ref()
+            .is_some_and(|commit| commit != evaluated_commit)
+        {
+            return Err(JournalError::EvaluatorCommitMismatch);
+        }
+        if !self.completed_evaluators.insert(evaluator_id.into()) {
+            return Err(JournalError::DuplicateEvaluator(evaluator_id.into()));
+        }
+        self.evaluator_commit = Some(evaluated_commit.into());
         Ok(())
     }
 
@@ -485,6 +555,13 @@ impl Machine {
                 expected: active_index,
                 actual: index,
             });
+        }
+        if self
+            .evaluator_commit
+            .as_ref()
+            .is_some_and(|commit| commit != candidate_commit)
+        {
+            return Err(JournalError::EvaluatorCommitMismatch);
         }
         self.active = Some(CandidateStage::Decided {
             index,
@@ -540,6 +617,8 @@ impl Machine {
             }
         }
         self.completed_candidates = index;
+        self.evaluator_commit = None;
+        self.completed_evaluators.clear();
         Ok(())
     }
 
@@ -632,6 +711,7 @@ const fn event_name(event: &JournalEvent) -> &'static str {
         JournalEvent::BaselineCaptured { .. } => "baseline_captured",
         JournalEvent::BaselineFailed { .. } => "baseline_failed",
         JournalEvent::CandidatePrepared { .. } => "candidate_prepared",
+        JournalEvent::CandidateEvaluatorCaptured { .. } => "candidate_evaluator_captured",
         JournalEvent::CandidateDecisionRecorded { .. } => "candidate_decision_recorded",
         JournalEvent::CandidateFinalized { .. } => "candidate_finalized",
         JournalEvent::RunStopped { .. } => "run_stopped",
@@ -726,6 +806,74 @@ mod tests {
             },
         ));
         entries
+    }
+
+    #[test]
+    fn partial_evaluator_capture_keeps_exact_recovery_action_and_commit() {
+        let mut entries = prepared();
+        entries.push(entry(
+            3,
+            JournalEvent::CandidateEvaluatorCaptured {
+                index: 1,
+                evaluator_id: "first".into(),
+                evaluated_commit: "def".into(),
+                output_json: "{}".into(),
+            },
+        ));
+        assert_eq!(
+            replay_journal(&entries)
+                .expect("partial replay")
+                .recovery_action(),
+            RecoveryAction::EvaluateCandidate {
+                index: 1,
+                worktree_id: "candidate-1".into()
+            }
+        );
+        entries.push(entry(
+            4,
+            JournalEvent::CandidateDecisionRecorded {
+                index: 1,
+                candidate_commit: "other".into(),
+                snapshot: snapshot(11.0),
+                decision: decision(Disposition::Keep),
+            },
+        ));
+        assert!(matches!(
+            replay_journal(&entries),
+            Err(JournalError::EvaluatorCommitMismatch)
+        ));
+    }
+
+    #[test]
+    fn duplicate_or_out_of_order_evaluator_capture_fails_closed() {
+        let captured = JournalEvent::CandidateEvaluatorCaptured {
+            index: 1,
+            evaluator_id: "first".into(),
+            evaluated_commit: "def".into(),
+            output_json: "{}".into(),
+        };
+        let mut entries = prepared();
+        entries.push(entry(3, captured.clone()));
+        entries.push(entry(4, captured));
+        assert!(matches!(
+            replay_journal(&entries),
+            Err(JournalError::DuplicateEvaluator(_))
+        ));
+
+        let mut wrong_stage = decided(Disposition::Keep);
+        wrong_stage.push(entry(
+            4,
+            JournalEvent::CandidateEvaluatorCaptured {
+                index: 1,
+                evaluator_id: "late".into(),
+                evaluated_commit: "def".into(),
+                output_json: "{}".into(),
+            },
+        ));
+        assert!(matches!(
+            replay_journal(&wrong_stage),
+            Err(JournalError::InvalidTransition { .. })
+        ));
     }
 
     #[test]

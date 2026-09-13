@@ -131,6 +131,12 @@ pub enum OutputError {
 pub struct ValidatedOutput(EvaluatorOutput);
 
 impl ValidatedOutput {
+    /// Returns full structurally validated envelope for durable replay.
+    #[must_use]
+    pub fn into_output(self) -> EvaluatorOutput {
+        self.0
+    }
+
     /// Returns evaluator ID.
     #[must_use]
     pub fn evaluator_id(&self) -> &str {

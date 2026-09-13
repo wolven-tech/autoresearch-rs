@@ -8,7 +8,10 @@ use autoresearch_core::{
     CandidateWorkspace, Disposition, EvaluationSnapshot, JournalEvent, RecoveryAction,
     RepositoryInspector, select_candidate,
 };
-use autoresearch_evaluator::{EvaluationContext, EvaluationContextSpec, build_snapshot};
+use autoresearch_evaluator::{
+    EvaluationContext, EvaluationContextSpec, EvaluatorOutput, ValidatedOutput, build_snapshot,
+    validate_output,
+};
 use autoresearch_git::{GitRepository, LockedGitRepository, RunLockGuard};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -75,29 +78,31 @@ pub fn evaluate_committed_candidate(
         ));
     }
     git.validate_candidate_commit(&run, &candidate, committed, stored.manifest.scope())?;
-    let artifacts = stored.run_directory.join("artifacts");
-    ensure_real_directory(&artifacts)?;
-    let context = EvaluationContext::new(EvaluationContextSpec {
-        run_id: run_id.into(),
-        baseline_commit: stored.base_commit.clone(),
-        evaluated_commit: committed.commit_id().to_string(),
-        candidate_worktree: candidate.path().to_path_buf(),
-        changed_paths: committed
-            .changed_paths()
-            .iter()
-            .map(|path| path.as_str().to_owned())
-            .collect(),
+    let context = candidate_context(
+        &stored,
+        run_id,
+        index,
+        &candidate,
+        committed,
         declared_environment,
-        artifact_directory: artifacts,
-        cancellation_id: format!("{run_id}-candidate-{index}"),
-    })?;
+    )?;
     let started = Instant::now();
-    let mut outputs = Vec::with_capacity(stored.manifest.evaluators().len());
-    for evaluator in stored.manifest.evaluators() {
+    let mut outputs = captured_outputs(&stored, &context, index, committed.commit_id().as_str())?;
+    let evaluators = stored.manifest.evaluators().to_vec();
+    for evaluator in evaluators.iter().skip(outputs.len()) {
         let result = executor.evaluate(&context, evaluator);
         git.validate_candidate_commit(&run, &candidate, committed, stored.manifest.scope())?;
         match result {
-            Ok(output) => outputs.push(output),
+            Ok(output) => {
+                let output_json = serde_json::to_string(&output.clone().into_output())?;
+                stored.append(JournalEvent::CandidateEvaluatorCaptured {
+                    index,
+                    evaluator_id: evaluator.id().into(),
+                    evaluated_commit: committed.commit_id().to_string(),
+                    output_json,
+                })?;
+                outputs.push(output);
+            }
             Err(failure) => {
                 return Err(RunnerError::CandidateEvaluator {
                     evaluator_id: evaluator.id().into(),
@@ -143,6 +148,66 @@ pub fn evaluate_committed_candidate(
         decision,
         finalization: outcome,
     })
+}
+
+fn candidate_context(
+    stored: &StoredRun,
+    run_id: &str,
+    index: u32,
+    candidate: &CandidateWorkspace,
+    committed: &CandidateCommit,
+    declared_environment: BTreeMap<String, String>,
+) -> Result<EvaluationContext, RunnerError> {
+    let artifacts = stored.run_directory.join("artifacts");
+    ensure_real_directory(&artifacts)?;
+    Ok(EvaluationContext::new(EvaluationContextSpec {
+        run_id: run_id.into(),
+        baseline_commit: stored.base_commit.clone(),
+        evaluated_commit: committed.commit_id().to_string(),
+        candidate_worktree: candidate.path().to_path_buf(),
+        changed_paths: committed
+            .changed_paths()
+            .iter()
+            .map(|path| path.as_str().to_owned())
+            .collect(),
+        declared_environment,
+        artifact_directory: artifacts,
+        cancellation_id: format!("{run_id}-candidate-{index}"),
+    })?)
+}
+
+fn captured_outputs(
+    stored: &StoredRun,
+    context: &EvaluationContext,
+    index: u32,
+    commit: &str,
+) -> Result<Vec<ValidatedOutput>, RunnerError> {
+    let mut outputs = Vec::new();
+    for entry in &stored.entries {
+        let JournalEvent::CandidateEvaluatorCaptured {
+            index: captured_index,
+            evaluator_id,
+            evaluated_commit,
+            output_json,
+        } = &entry.event
+        else {
+            continue;
+        };
+        if *captured_index != index {
+            continue;
+        }
+        let Some(declared) = stored.manifest.evaluators().get(outputs.len()) else {
+            return Err(RunnerError::InvalidState("extra captured evaluator"));
+        };
+        if evaluator_id != declared.id() || evaluated_commit != commit {
+            return Err(RunnerError::InvalidState(
+                "captured evaluator order or commit differs from frozen run",
+            ));
+        }
+        let output: EvaluatorOutput = serde_json::from_str(output_json)?;
+        outputs.push(validate_output(context, evaluator_id, output)?);
+    }
+    Ok(outputs)
 }
 
 fn current_best_snapshot(stored: &StoredRun) -> Result<EvaluationSnapshot, RunnerError> {

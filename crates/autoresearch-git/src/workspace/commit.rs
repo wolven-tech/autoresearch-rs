@@ -13,6 +13,27 @@ use std::fs;
 use std::path::Path;
 
 impl LockedGitRepository<'_> {
+    /// Reconstructs contained commit evidence after journal-led recovery.
+    ///
+    /// # Errors
+    ///
+    /// Refuses dirty, detached-at-parent, foreign, nonlinear, or out-of-scope
+    /// candidate state; never guesses a commit from branch names alone.
+    pub fn recover_committed_candidate(
+        &self,
+        run: &RunWorkspace,
+        candidate: &CandidateWorkspace,
+        boundary: &MutationBoundary,
+    ) -> Result<CandidateCommit, GitError> {
+        self.ensure_candidate_current(run, candidate)?;
+        ensure_candidate_repository_identity(self.snapshot.root(), candidate)?;
+        ensure_candidate_clean(candidate.path())?;
+        let head = resolve_commit(candidate.path(), "resolve recovered candidate HEAD", "HEAD")?;
+        ensure_direct_child(candidate.path(), &head, candidate.parent_commit())?;
+        let paths = collect_commit_paths(candidate.path(), candidate.parent_commit(), &head)?;
+        CandidateCommit::new(head, paths, boundary).map_err(Into::into)
+    }
+
     /// Measures exact line delta from candidate commit for lexicographic
     /// tie-breaker. Dependency-manifest mutations fail closed until a
     /// dependency-aware delta adapter is available.

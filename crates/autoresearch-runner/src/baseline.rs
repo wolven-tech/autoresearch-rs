@@ -9,8 +9,9 @@ use autoresearch_core::{
     RunView, replay_journal,
 };
 use autoresearch_evaluator::{
-    CancellationToken, ContextError, EvaluationContext, EvaluationContextSpec, ProcessLimitError,
-    ProcessLimits, ValidatedOutput, ValidationError, build_snapshot, evaluate_subprocess,
+    CancellationToken, ContextError, EvaluationContext, EvaluationContextSpec, OutputError,
+    ProcessLimitError, ProcessLimits, ValidatedOutput, ValidationError, build_snapshot,
+    evaluate_subprocess,
 };
 use autoresearch_git::{GitError, GitRepository, LockedGitRepository, RunLockGuard};
 use std::collections::BTreeMap;
@@ -47,6 +48,9 @@ pub enum RunnerError {
     /// Evaluator outputs cannot form complete frozen snapshot.
     #[error(transparent)]
     Validation(#[from] ValidationError),
+    /// Replayed evaluator envelope failed shared structural validation.
+    #[error(transparent)]
+    Output(#[from] OutputError),
     /// Candidate evaluator failed without a comparable score.
     #[error("candidate evaluator {evaluator_id} failed: {failure:?}")]
     CandidateEvaluator {

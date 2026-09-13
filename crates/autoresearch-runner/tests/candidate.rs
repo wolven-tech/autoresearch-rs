@@ -8,10 +8,12 @@ use autoresearch_core::{
     RepositoryInspector, replay_journal,
 };
 use autoresearch_evaluator::{
-    EvaluationContext, EvaluatorOutput, ValidatedOutput, validate_output,
+    EvaluationContext, EvaluationContextSpec, EvaluatorOutput, ValidatedOutput, validate_output,
 };
 use autoresearch_git::{GitRepository, LockedGitRepository, RunLockGuard};
-use autoresearch_runner::{BaselineExecutor, RunnerError, evaluate_committed_candidate};
+use autoresearch_runner::{
+    BaselineExecutor, ResumeOutcome, RunnerError, evaluate_committed_candidate, resume_run,
+};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -117,6 +119,54 @@ impl Fixture {
             .lines()
             .map(|line| serde_json::from_str(line).expect("entry"))
             .collect()
+    }
+
+    fn append(&self, event: JournalEvent) {
+        use std::io::Write as _;
+
+        let entry = JournalEntry {
+            sequence: u64::try_from(self.journal().len()).expect("sequence"),
+            run_id: "run-1".into(),
+            event,
+        };
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(self.run_dir.join("journal.jsonl"))
+            .expect("journal append");
+        file.write_all(&serde_json::to_vec(&entry).expect("entry JSON"))
+            .expect("write entry");
+        file.write_all(b"\n").expect("newline");
+    }
+
+    fn record_keep_decision(&self) {
+        self.append(JournalEvent::CandidateDecisionRecorded {
+            index: 1,
+            candidate_commit: self.committed.commit_id().to_string(),
+            snapshot: scored_snapshot(43.0),
+            decision: CandidateDecision {
+                disposition: Disposition::Keep,
+                reason: DecisionReason::PrimaryImprovement,
+            },
+        });
+    }
+}
+
+fn scored_snapshot(score: f64) -> EvaluationSnapshot {
+    EvaluationSnapshot {
+        measurements: vec![
+            Measurement::hard_gate("tests", true, None).expect("gate"),
+            Measurement::numeric(
+                "score",
+                NumericMetricKind::Objective,
+                MetricDirection::Maximize,
+                score,
+            )
+            .expect("score"),
+        ],
+        complexity: Complexity {
+            changed_lines: 2,
+            ..Complexity::default()
+        },
     }
 }
 
@@ -264,7 +314,11 @@ fn improved_candidate_is_journaled_before_retained_ref_advances() {
         CandidateFinalization::Kept { .. }
     ));
     assert_eq!(result.snapshot.complexity.changed_lines, 2);
-    assert_eq!(fixture.journal().len(), 5);
+    assert_eq!(fixture.journal().len(), 6);
+    assert!(matches!(
+        fixture.journal()[3].event,
+        JournalEvent::CandidateEvaluatorCaptured { .. }
+    ));
     let ReplayState::Run(view) = replay_journal(&fixture.journal()).expect("journal replay") else {
         panic!("run expected")
     };
@@ -450,6 +504,234 @@ fn recorded_keep_for_commit_other_than_candidate_head_cannot_advance_ref() {
         fixture.base
     );
     assert_eq!(fixture.journal().len(), 4);
+}
+
+#[test]
+fn resume_before_evaluation_runs_candidate_then_reports_next_index() {
+    let fixture = Fixture::new();
+    let resumed = resume_run(
+        &fixture.root,
+        "run-1",
+        &FakeExecutor {
+            score: 43.0,
+            gate_passed: true,
+            fail: false,
+        },
+        BTreeMap::new(),
+    )
+    .expect("resume candidate");
+    assert!(matches!(
+        resumed,
+        ResumeOutcome::Candidate(outcome) if outcome.decision.disposition == Disposition::Keep
+    ));
+    assert!(matches!(
+        resume_run(
+            &fixture.root,
+            "run-1",
+            &FakeExecutor {
+                score: 0.0,
+                gate_passed: false,
+                fail: true
+            },
+            BTreeMap::new()
+        ),
+        Ok(ResumeOutcome::ReadyForCandidate { index: 2 })
+    ));
+}
+
+#[test]
+fn resume_skips_captured_evaluator_and_completes_from_durable_output() {
+    let fixture = Fixture::new();
+    let manifest = ValidatedManifest::parse(MANIFEST).expect("manifest");
+    let artifacts = fixture.run_dir.join("artifacts");
+    fs::create_dir(&artifacts).expect("artifacts");
+    let artifacts = fs::canonicalize(artifacts).expect("canonical artifacts");
+    let context = EvaluationContext::new(EvaluationContextSpec {
+        run_id: "run-1".into(),
+        baseline_commit: fixture.base.clone(),
+        evaluated_commit: fixture.committed.commit_id().to_string(),
+        candidate_worktree: fixture.candidate.path().to_path_buf(),
+        changed_paths: vec!["tracked.txt".into()],
+        declared_environment: BTreeMap::new(),
+        artifact_directory: artifacts,
+        cancellation_id: "run-1-candidate-1".into(),
+    })
+    .expect("context");
+    let output = FakeExecutor {
+        score: 43.0,
+        gate_passed: true,
+        fail: false,
+    }
+    .evaluate(&context, &manifest.evaluators()[0])
+    .expect("first evaluator output");
+    fixture.append(JournalEvent::CandidateEvaluatorCaptured {
+        index: 1,
+        evaluator_id: "one".into(),
+        evaluated_commit: fixture.committed.commit_id().to_string(),
+        output_json: serde_json::to_string(&output.into_output()).expect("output JSON"),
+    });
+    let resumed = resume_run(
+        &fixture.root,
+        "run-1",
+        &FakeExecutor {
+            score: 0.0,
+            gate_passed: false,
+            fail: true,
+        },
+        BTreeMap::new(),
+    )
+    .expect("skip completed evaluator");
+    assert!(matches!(
+        resumed,
+        ResumeOutcome::Candidate(outcome) if outcome.decision.disposition == Disposition::Keep
+    ));
+    assert_eq!(fixture.journal().len(), 6);
+}
+
+#[test]
+fn resume_finalizes_recorded_decision_without_re_evaluation() {
+    let fixture = Fixture::new();
+    fixture.record_keep_decision();
+    let resumed = resume_run(
+        &fixture.root,
+        "run-1",
+        &FakeExecutor {
+            score: 0.0,
+            gate_passed: false,
+            fail: true,
+        },
+        BTreeMap::new(),
+    )
+    .expect("resume finalization");
+    assert!(matches!(resumed, ResumeOutcome::Finalized { index: 1, .. }));
+    assert_eq!(fixture.journal().len(), 5);
+    assert_eq!(
+        git_text(
+            &fixture.root,
+            &["rev-parse", "refs/heads/autoresearch/run-1"]
+        ),
+        fixture.committed.commit_id().as_str()
+    );
+}
+
+#[test]
+fn resume_after_branch_advance_or_cleanup_reconciles_without_guessing() {
+    for cleanup_before_resume in [false, true] {
+        let fixture = Fixture::new();
+        fixture.record_keep_decision();
+        let snapshot = GitRepository
+            .inspect(&fixture.root, &fixture.base)
+            .expect("snapshot");
+        let lock = RunLockGuard::acquire(&snapshot, "run-1").expect("lock");
+        let git = LockedGitRepository::new(&snapshot, &lock).expect("locked Git");
+        if cleanup_before_resume {
+            let ReplayState::Run(view) = replay_journal(&fixture.journal()).expect("replay") else {
+                panic!("run expected")
+            };
+            git.recover_candidate(&view).expect("complete side effect");
+        } else {
+            let run = git.open_run().expect("run");
+            git.retain_candidate(&run, &fixture.candidate)
+                .expect("advance before cleanup");
+        }
+        drop(git);
+        drop(lock);
+        assert!(matches!(
+            resume_run(
+                &fixture.root,
+                "run-1",
+                &FakeExecutor {
+                    score: 0.0,
+                    gate_passed: false,
+                    fail: true
+                },
+                BTreeMap::new()
+            ),
+            Ok(ResumeOutcome::Finalized { index: 1, .. })
+        ));
+        assert!(!fixture.candidate.path().exists());
+        assert_eq!(fixture.journal().len(), 5);
+    }
+}
+
+#[test]
+fn diverged_retained_ref_refuses_resume_and_preserves_evidence() {
+    let fixture = Fixture::new();
+    git(
+        &fixture.root,
+        &[
+            "update-ref",
+            "refs/heads/autoresearch/run-1",
+            fixture.committed.commit_id().as_str(),
+            &fixture.base,
+        ],
+    );
+    assert!(matches!(
+        resume_run(
+            &fixture.root,
+            "run-1",
+            &FakeExecutor {
+                score: 43.0,
+                gate_passed: true,
+                fail: false
+            },
+            BTreeMap::new()
+        ),
+        Err(RunnerError::Git(_))
+    ));
+    assert_eq!(fixture.journal().len(), 3);
+    assert!(fixture.candidate.path().exists());
+    assert_eq!(
+        git_text(&fixture.root, &["rev-parse", "HEAD"]),
+        fixture.base
+    );
+}
+
+#[test]
+fn prepared_unmodified_candidate_requires_mutation_instead_of_guessing() {
+    let fixture = Fixture::new();
+    evaluate_committed_candidate(
+        &fixture.root,
+        "run-1",
+        &fixture.committed,
+        &FakeExecutor {
+            score: 43.0,
+            gate_passed: true,
+            fail: false,
+        },
+        BTreeMap::new(),
+    )
+    .expect("first candidate");
+    let snapshot = GitRepository
+        .inspect(&fixture.root, &fixture.base)
+        .expect("snapshot");
+    let lock = RunLockGuard::acquire(&snapshot, "run-1").expect("lock");
+    let git = LockedGitRepository::new(&snapshot, &lock).expect("locked Git");
+    let run = git.open_run().expect("run");
+    let second = CandidateWorkspace::new(&run, 2, &snapshot.root().join(".autoresearch/worktrees"))
+        .expect("candidate identity");
+    fixture.append(JournalEvent::CandidatePrepared {
+        index: 2,
+        parent_commit: run.head_commit().to_string(),
+        worktree_id: second.worktree_id().into(),
+    });
+    let prepared = git.prepare_candidate(&run, 2).expect("second candidate");
+    drop(git);
+    drop(lock);
+    assert!(matches!(
+        resume_run(
+            &fixture.root,
+            "run-1",
+            &FakeExecutor {
+                score: 0.0,
+                gate_passed: false,
+                fail: true
+            },
+            BTreeMap::new()
+        ),
+        Ok(ResumeOutcome::NeedsMutation { index: 2, worktree }) if worktree == prepared.path()
+    ));
+    assert!(prepared.path().exists());
 }
 
 fn git(root: &Path, args: &[&str]) {
