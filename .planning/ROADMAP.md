@@ -8,7 +8,7 @@ Build safe experiment substrate first, then Git isolation, evaluators, product a
 
 - [x] **Phase 1: Foundation** - Workspace, typed decisions, frozen config, journal, and CLI shell.
 - [x] **Phase 2: Git Loop** - Isolated worktrees, protected paths, branches, locks, and recovery. (completed 2026-09-12)
-- [ ] **Phase 3: Evaluator SDK** - Native traits, JSONL protocol, command, Cargo, and diff adapters.
+- [x] **Phase 3: Evaluator SDK** - Native traits, JSONL protocol, command, Cargo, and diff adapters. (completed 2026-09-13)
 - [ ] **Phase 4: Product Web** - Browser, Lighthouse, accessibility, SEO/GEO adapters and fixture.
 - [ ] **Phase 5: Agents and Evidence** - Mutation commands, static report, redaction, and export.
 - [ ] **Phase 6: Candle and Portfolio** - Candle backend, Python parity, and reusable portfolio packs.
@@ -40,7 +40,12 @@ Plans:
 ### Phase 3: Evaluator SDK
 **Goal**: Run trusted native and untrusted subprocess evaluators through one typed contract.
 **Depends on**: Phase 2
-**Plans**: TBD
+**Plans**: 8 completed stories in `tasks/prd-phase-3-evaluator-sdk.md`
+
+Native contract, JSONL v1 protocol, strict declared-output validation,
+bounded process execution, command/Cargo hard gates, exact-commit diff
+evidence, and local examples are complete. Phase 4 Product Web remains next;
+`run`/`resume` and reporting still belong to later phases.
 
 ### Phase 4: Product Web
 **Goal**: Measure browser, accessibility, performance, SEO, GEO, and production properties without moving product gates.
@@ -63,7 +68,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Complete | 2026-09-11 |
 | 2. Git Loop | 4/4 | Complete | 2026-09-12 |
-| 3. Evaluator SDK | 0/TBD | Not started | - |
+| 3. Evaluator SDK | 8/8 | Complete | 2026-09-13 |
 | 4. Product Web | 0/TBD | Not started | - |
 | 5. Agents and Evidence | 0/TBD | Not started | - |
 | 6. Candle and Portfolio | 0/TBD | Not started | - |

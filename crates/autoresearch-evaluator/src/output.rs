@@ -1,0 +1,250 @@
+//! Native evaluator result types and shared structural validation.
+
+use crate::EvaluationContext;
+use autoresearch_core::{Measurement, MetricKind, RepoPath};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use thiserror::Error;
+
+/// Non-numeric evaluator observation retained for reports, not selection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Observation {
+    /// Stable observation code.
+    pub code: String,
+    /// Human-readable supporting detail.
+    pub detail: String,
+}
+
+/// Evaluator-created artifact relative to run-owned artifact directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Artifact {
+    /// Stable artifact name.
+    pub name: String,
+    /// Portable relative path; physical containment is validated separately.
+    pub relative_path: String,
+    /// Declared media type.
+    pub media_type: String,
+}
+
+/// Non-fatal evaluator warning retained for reports.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Warning {
+    /// Stable warning code.
+    pub code: String,
+    /// Human-readable supporting detail.
+    pub detail: String,
+}
+
+/// Evaluator failure class, distinct from a legitimate failed hard gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureClass {
+    /// Evaluator explicitly reported inability to evaluate.
+    Reported,
+    /// Executable could not start.
+    Spawn,
+    /// Executable exited unsuccessfully.
+    NonZeroExit,
+    /// Executable exceeded its deadline.
+    Timeout,
+    /// Invocation was cancelled.
+    Cancelled,
+    /// Captured output exceeded configured limit.
+    OutputLimit,
+    /// Process response violated wire protocol.
+    Protocol,
+    /// Output did not match frozen declaration or provenance.
+    Validation,
+}
+
+/// Typed failure returned instead of fabricated metrics or gate passes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvaluatorFailure {
+    /// Stable class for runner stop policy and reports.
+    pub class: FailureClass,
+    /// Bounded, redacted diagnostic detail.
+    pub detail: String,
+}
+
+/// Untrusted result envelope from either native or subprocess evaluator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvaluatorOutput {
+    /// Evaluator ID bound to frozen manifest entry.
+    pub evaluator_id: String,
+    /// Run identity echoed by evaluator.
+    pub run_id: String,
+    /// Baseline commit echoed by evaluator.
+    pub baseline_commit: String,
+    /// Evaluated commit echoed by evaluator.
+    pub evaluated_commit: String,
+    /// Typed gate and numeric outputs.
+    pub measurements: Vec<Measurement>,
+    /// Non-selection observations.
+    pub observations: Vec<Observation>,
+    /// Run-owned artifact references.
+    pub artifacts: Vec<Artifact>,
+    /// Non-fatal warnings.
+    pub warnings: Vec<Warning>,
+}
+
+/// Statically linked evaluator contract; no dynamic ABI or provider SDK.
+pub trait NativeEvaluator: Send + Sync {
+    /// Returns ID of corresponding frozen manifest evaluator.
+    fn id(&self) -> &str;
+
+    /// Evaluates exact context and returns untrusted output for validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed failure when no comparable result can be produced.
+    fn evaluate(&self, context: &EvaluationContext) -> Result<EvaluatorOutput, EvaluatorFailure>;
+}
+
+/// Failure from a statically linked evaluator or shared output validator.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum NativeEvaluationError {
+    /// Evaluator did not produce comparable output.
+    #[error("native evaluator failed: {0:?}")]
+    Evaluator(EvaluatorFailure),
+    /// Evaluator returned output that failed structural validation.
+    #[error("native evaluator output invalid: {0}")]
+    Output(OutputError),
+}
+
+/// Invokes a native evaluator and validates its output before returning it.
+///
+/// # Errors
+///
+/// Returns evaluator failure or shared output validation error.
+pub fn evaluate_native(
+    context: &EvaluationContext,
+    evaluator: &impl NativeEvaluator,
+) -> Result<ValidatedOutput, NativeEvaluationError> {
+    let output = evaluator
+        .evaluate(context)
+        .map_err(NativeEvaluationError::Evaluator)?;
+    validate_output(context, evaluator.id(), output).map_err(NativeEvaluationError::Output)
+}
+
+/// Structural validation error shared by native and process result paths.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum OutputError {
+    /// Evaluator ID differs from declared invocation.
+    #[error("evaluator ID does not match invocation")]
+    EvaluatorIdMismatch,
+    /// Run or commit identity differs from invocation.
+    #[error("{0} does not match invocation")]
+    IdentityMismatch(&'static str),
+    /// Measurement name appears more than once.
+    #[error("duplicate measurement `{0}`")]
+    DuplicateMeasurement(String),
+    /// Market evidence cannot be generated by an evaluator.
+    #[error("evaluator cannot emit market evidence `{0}`")]
+    MarketEvidence(String),
+    /// Artifact path cannot be used as a run-owned relative path.
+    #[error("unsafe artifact path `{0}`")]
+    UnsafeArtifactPath(String),
+    /// Artifact name appears more than once.
+    #[error("duplicate artifact `{0}`")]
+    DuplicateArtifact(String),
+}
+
+/// Output accepted by common structural validator.
+///
+/// Manifest declaration and physical artifact containment are added by the
+/// declared-output validator before any snapshot is constructed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidatedOutput(EvaluatorOutput);
+
+impl ValidatedOutput {
+    /// Returns evaluator ID.
+    #[must_use]
+    pub fn evaluator_id(&self) -> &str {
+        &self.0.evaluator_id
+    }
+
+    /// Returns typed measurements in evaluator-provided order.
+    #[must_use]
+    pub fn measurements(&self) -> &[Measurement] {
+        &self.0.measurements
+    }
+
+    /// Returns non-selection observations.
+    #[must_use]
+    pub fn observations(&self) -> &[Observation] {
+        &self.0.observations
+    }
+
+    /// Returns artifact references.
+    #[must_use]
+    pub fn artifacts(&self) -> &[Artifact] {
+        &self.0.artifacts
+    }
+
+    /// Returns warnings.
+    #[must_use]
+    pub fn warnings(&self) -> &[Warning] {
+        &self.0.warnings
+    }
+}
+
+/// Applies structural validation to a native or subprocess output envelope.
+///
+/// # Errors
+///
+/// Rejects mismatched identities, duplicate measurements/artifacts, evaluator-
+/// generated market evidence, and non-portable artifact paths.
+pub fn validate_output(
+    context: &EvaluationContext,
+    evaluator_id: &str,
+    output: EvaluatorOutput,
+) -> Result<ValidatedOutput, OutputError> {
+    if evaluator_id.trim().is_empty() || output.evaluator_id != evaluator_id {
+        return Err(OutputError::EvaluatorIdMismatch);
+    }
+    for (name, actual, expected) in [
+        ("run ID", output.run_id.as_str(), context.run_id().as_str()),
+        (
+            "baseline commit",
+            output.baseline_commit.as_str(),
+            context.baseline_commit().as_str(),
+        ),
+        (
+            "evaluated commit",
+            output.evaluated_commit.as_str(),
+            context.evaluated_commit().as_str(),
+        ),
+    ] {
+        if actual != expected {
+            return Err(OutputError::IdentityMismatch(name));
+        }
+    }
+
+    let mut measurements = HashSet::with_capacity(output.measurements.len());
+    for measurement in &output.measurements {
+        if !measurements.insert(measurement.name()) {
+            return Err(OutputError::DuplicateMeasurement(measurement.name().into()));
+        }
+        if measurement.kind() == MetricKind::MarketEvidence {
+            return Err(OutputError::MarketEvidence(measurement.name().into()));
+        }
+    }
+
+    let mut artifacts = HashSet::with_capacity(output.artifacts.len());
+    for artifact in &output.artifacts {
+        if !artifacts.insert(artifact.name.as_str()) {
+            return Err(OutputError::DuplicateArtifact(artifact.name.clone()));
+        }
+        if RepoPath::new(artifact.relative_path.clone()).is_err() {
+            return Err(OutputError::UnsafeArtifactPath(
+                artifact.relative_path.clone(),
+            ));
+        }
+    }
+    Ok(ValidatedOutput(output))
+}

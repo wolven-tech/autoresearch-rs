@@ -86,6 +86,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "autoresearch-evaluator"
+version = "0.1.0"
+dependencies = [
+ "autoresearch-config",
+ "autoresearch-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "autoresearch-git"
 version = "0.1.0"
 dependencies = [

@@ -3,6 +3,7 @@ members = [
     "apps/autoresearch-cli",
     "crates/autoresearch-config",
     "crates/autoresearch-core",
+    "crates/autoresearch-evaluator",
     "crates/autoresearch-git",
 ]
 resolver = "3"

@@ -1,11 +1,14 @@
 # autoresearch
 
-> **Rust fork status:** foundation implementation is active. Rust workspace now
-> provides validated experiment contracts, deterministic candidate policy,
-> frozen input identities, crash-recovery journal model, and `init`, `doctor`,
-> and baseline-freeze CLI commands. Candidate execution and evaluator protocol
-> are not shipped yet; baseline output correctly reports evaluator evidence as
-> pending. Original Python implementation remains below and runnable unchanged.
+> **Rust fork status:** Rust workspace ships validated experiment contracts,
+> deterministic candidate policy, frozen input identities, crash-recovery
+> journal model, Git candidate-worktree lifecycle, and evaluator SDK (native
+> contract, JSONL v1 subprocess protocol, command/Cargo gates, exact-commit
+> diff evidence). CLI ships `init`, `doctor`, and baseline freeze. Automated
+> `run`/`resume`, browser/Lighthouse adapters, mutation orchestration, and
+> reporting are not shipped; baseline output still reports evaluator evidence
+> as pending. Original Python implementation remains below and runnable
+> unchanged.
 
 ## Rust foundation quick start
 
@@ -24,6 +27,11 @@ control inputs and writes only under ignored `.autoresearch/runs/`. It freezes
 identity and opens journal; it does not fabricate a baseline score.
 
 Architecture and safety decisions: [`docs/plans/2026-09-11-autoresearch-rust-platform-design.md`](docs/plans/2026-09-11-autoresearch-rust-platform-design.md).
+
+Evaluator SDK contract and runnable examples:
+[`docs/evaluator-protocol.md`](docs/evaluator-protocol.md) and
+[`docs/evaluator-examples.md`](docs/evaluator-examples.md). These examples show
+one invocation only; they are not an automated product experiment.
 
 ## Original upstream implementation
 
