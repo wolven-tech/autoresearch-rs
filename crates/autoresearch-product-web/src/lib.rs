@@ -3,5 +3,6 @@
 pub mod accessibility;
 /// Browser inspection and screenshot evidence.
 pub mod browser;
+pub mod geo;
 pub mod lighthouse;
 pub mod seo;

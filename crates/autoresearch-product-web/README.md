@@ -39,3 +39,16 @@ issue carries exact route, URL, rule, and run-owned JSON artifact. It does not
 claim Google indexation, rankings, AI citation, or traffic. Remote production
 checks are unsupported until a separate read-only origin allowlist is designed;
 off-origin and undeclared redirects are rejected before a second request.
+
+GEO diagnostics use optional frozen `[web.geo]` canonical entity name, exact
+product facts, and passage bound. Visible HTML passages marked
+`data-geo-passage` can contain `data-geo-claim` elements; each claim names a
+`data-geo-source-ref` matching an in-passage link ID. A `data-geo-fact` element
+maps source-HTML wording to a frozen fact key. This is a local content-integrity
+lint: it catches conflicting names or facts, uncited claims, and missing source
+links. Linked sources are **not fetched or verified**; static parsing cannot
+prove text is visible after CSS or JavaScript rendering. Passage text and rule
+appear in run-owned JSON. Results are distinct from live AI-engine citations,
+impressions, generated-answer quality, commercial receipts, and original
+product promotion/kill gates. No synthetic citation or generated answer is
+treated as search visibility evidence.

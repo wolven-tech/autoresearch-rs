@@ -4,7 +4,7 @@ use autoresearch_core::{
     MetricDirection, MutationBoundary, MutationBoundaryError, NumericMetricKind, RepoPath,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use thiserror::Error;
 use url::Url;
 
@@ -289,6 +289,7 @@ pub struct WebTargets {
     thresholds: WebThresholds,
     lighthouse: Option<LighthouseSettings>,
     seo: Option<SeoSettings>,
+    geo: Option<GeoSettings>,
 }
 
 impl WebTargets {
@@ -332,6 +333,40 @@ impl WebTargets {
     #[must_use]
     pub const fn seo(&self) -> Option<&SeoSettings> {
         self.seo.as_ref()
+    }
+
+    /// Returns optional frozen GEO diagnostic policy.
+    #[must_use]
+    pub const fn geo(&self) -> Option<&GeoSettings> {
+        self.geo.as_ref()
+    }
+}
+
+/// Canonical entity, exact product facts, and passage bound for local GEO checks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GeoSettings {
+    entity_name: String,
+    facts: BTreeMap<String, String>,
+    max_passages: u8,
+}
+
+impl GeoSettings {
+    /// Returns canonical visible entity name.
+    #[must_use]
+    pub fn entity_name(&self) -> &str {
+        &self.entity_name
+    }
+
+    /// Returns exact human-readable fact strings keyed by stable identifiers.
+    #[must_use]
+    pub fn facts(&self) -> &BTreeMap<String, String> {
+        &self.facts
+    }
+
+    /// Returns maximum inspected passage count.
+    #[must_use]
+    pub const fn max_passages(&self) -> u8 {
+        self.max_passages
     }
 }
 
@@ -545,6 +580,16 @@ struct RawWebTargets {
     lighthouse: Option<RawLighthouseSettings>,
     #[serde(default)]
     seo: Option<RawSeoSettings>,
+    #[serde(default)]
+    geo: Option<RawGeoSettings>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawGeoSettings {
+    entity_name: String,
+    facts: BTreeMap<String, String>,
+    max_passages: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -781,6 +826,7 @@ fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError>
         .map(validate_lighthouse_settings)
         .transpose()?;
     let seo = raw.seo.map(validate_seo_settings).transpose()?;
+    let geo = raw.geo.map(validate_geo_settings).transpose()?;
     Ok(WebTargets {
         origin: origin.origin().ascii_serialization(),
         routes,
@@ -789,6 +835,35 @@ fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError>
         thresholds: raw.thresholds,
         lighthouse,
         seo,
+        geo,
+    })
+}
+
+fn validate_geo_settings(raw: RawGeoSettings) -> Result<GeoSettings, ManifestError> {
+    let entity_name = nonblank(raw.entity_name, "web.geo.entity_name")?;
+    if entity_name.len() > 120
+        || raw.facts.is_empty()
+        || raw.facts.len() > 16
+        || !(1..=32).contains(&raw.max_passages)
+        || raw.facts.iter().any(|(key, value)| {
+            key.is_empty()
+                || key.len() > 40
+                || !key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+                || value.trim().is_empty()
+                || value.len() > 200
+        })
+    {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.geo".into(),
+            reason: "requires bounded entity, 1–16 keyed facts, and 1–32 passages",
+        });
+    }
+    Ok(GeoSettings {
+        entity_name,
+        facts: raw.facts,
+        max_passages: raw.max_passages,
     })
 }
 
@@ -1136,6 +1211,13 @@ sitemap_path = "/sitemap.xml"
 max_redirects = 2
 "#;
 
+    const GEO: &str = r#"
+[web.geo]
+entity_name = "Fixture Studio"
+facts = { price = "£39 once", privacy = "Local-only" }
+max_passages = 16
+"#;
+
     #[test]
     fn manifest_parses_and_adds_control_paths() {
         let manifest = ValidatedManifest::parse(VALID).expect("valid manifest");
@@ -1271,6 +1353,40 @@ max_redirects = 2
             source.replace("/robots.txt", "../robots.txt"),
             source.replace("/sitemap.xml", "https://example.com/sitemap.xml"),
             source.replace("/sitemap.xml", "/robots.txt"),
+        ] {
+            assert!(ValidatedManifest::parse(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn geo_policy_is_frozen_and_bounded() {
+        let source = format!("{VALID}{WEB}{GEO}");
+        let manifest = ValidatedManifest::parse(&source).expect("GEO policy");
+        let policy = manifest.web().expect("web").geo().expect("geo");
+        assert_eq!(policy.entity_name(), "Fixture Studio");
+        assert_eq!(
+            policy.facts().get("price").map(String::as_str),
+            Some("£39 once")
+        );
+        assert_eq!(policy.max_passages(), 16);
+        let baseline = FrozenIdentity::capture(&manifest, b"program", &BTreeMap::new(), None)
+            .expect("baseline identity");
+        for changed in [
+            source.replace("Fixture Studio", "Other Studio"),
+            source.replace("£39 once", "£49 once"),
+            source.replace("max_passages = 16", "max_passages = 8"),
+        ] {
+            let changed_manifest = ValidatedManifest::parse(&changed).expect("changed GEO policy");
+            let changed_identity =
+                FrozenIdentity::capture(&changed_manifest, b"program", &BTreeMap::new(), None)
+                    .expect("changed identity");
+            assert_ne!(baseline.aggregate_sha256, changed_identity.aggregate_sha256);
+        }
+        for invalid in [
+            source.replace("max_passages = 16", "max_passages = 0"),
+            source.replace("max_passages = 16", "max_passages = 33"),
+            source.replace("price =", "bad.key ="),
+            source.replace("£39 once", ""),
         ] {
             assert!(ValidatedManifest::parse(&invalid).is_err());
         }

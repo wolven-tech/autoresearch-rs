@@ -64,3 +64,8 @@ min_accessibility_score = 90
 sitemap_path = "/sitemap.xml"
 robots_path = "/robots.txt"
 max_redirects = 2
+
+[web.geo]
+entity_name = "Product-web fixture"
+facts = { operation = "Local-only checks", evidence = "Lab evidence, not market receipts" }
+max_passages = 16

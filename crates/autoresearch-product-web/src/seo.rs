@@ -83,10 +83,10 @@ pub struct SeoEvidence {
     pub issues: Vec<SeoIssue>,
 }
 
-struct Fetched {
-    hops: Vec<SeoHop>,
-    final_url: Url,
-    body: String,
+pub(crate) struct Fetched {
+    pub(crate) hops: Vec<SeoHop>,
+    pub(crate) final_url: Url,
+    pub(crate) body: String,
 }
 
 /// Checks one declared local route and writes a bounded evidence artifact.
@@ -116,13 +116,7 @@ pub fn inspect_local_route(
     let source_url = origin
         .join(route.path())
         .map_err(|_| SeoError::Undeclared)?;
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .proxy(None)
-        .max_redirects(0)
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(5)))
-        .build()
-        .into();
+    let agent = local_agent();
     let fetched = fetch_declared_chain(&agent, web, &source_url, seo.max_redirects())?;
     let artifact = format!("seo/route-{route_index:03}.json");
     let document = Html::parse_document(&fetched.body);
@@ -173,7 +167,17 @@ pub fn inspect_local_route(
     Ok(evidence)
 }
 
-fn fetch_declared_chain(
+pub(crate) fn local_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .proxy(None)
+        .max_redirects(0)
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
+        .into()
+}
+
+pub(crate) fn fetch_declared_chain(
     agent: &ureq::Agent,
     web: &WebTargets,
     source: &Url,
