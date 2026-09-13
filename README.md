@@ -10,9 +10,9 @@
 > exact-commit `baseline`, one-candidate-at-a-time `run`, journal `resume`,
 > read-only `status`, independent kept-commit `verify`, and stable-boundary
 > `stop`. Versioned journal-backed JSON report and standalone offline HTML
-> board and bounded redacted local export now ship; broad autonomous
-> orchestration remains unfinished. Original Python implementation remains below and runnable
-> unchanged.
+> board and bounded redacted local export now ship. This is the first usable
+> Rust product-research loop, not autonomous research orchestration. Original
+> Python implementation remains below and runnable unchanged.
 
 ## Rust foundation quick start
 
@@ -57,6 +57,15 @@ candidates; active candidate needs inspection or completion first.
 [`docs/evidence-board.md`](docs/evidence-board.md) for provenance and
 accessibility limits. `export` writes a new redacted bundle outside the
 product checkout and copies only explicitly selected, declared artifacts.
+
+First usable loop is covered by a disposable product-page CLI fixture:
+baseline, isolated manual improvement, retained exact commit, higher-scoring
+failed-CTA-gate regression, recovery after candidate commit, independent
+verification, report, and export. Fixture objective counts page content items;
+it is not a live quality score. Separate Product Web pack exercises Chromium,
+accessibility, SEO/GEO, and frozen Lighthouse-import contracts. Neither fixture
+proves customer demand, ranking, WCAG AA conformance, or commercial validation.
+No default network write, deployment, outreach, payment, or gate movement exists.
 
 Architecture and safety decisions: [`docs/plans/2026-09-11-autoresearch-rust-platform-design.md`](docs/plans/2026-09-11-autoresearch-rust-platform-design.md).
 

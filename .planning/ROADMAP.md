@@ -10,7 +10,7 @@ Build safe experiment substrate first, then Git isolation, evaluators, product a
 - [x] **Phase 2: Git Loop** - Isolated worktrees, protected paths, branches, locks, and recovery. (completed 2026-09-12)
 - [x] **Phase 3: Evaluator SDK** - Native traits, JSONL protocol, command, Cargo, and diff adapters. (completed 2026-09-13)
 - [x] **Phase 4: Product Web** - Browser, Lighthouse, accessibility, SEO/GEO adapters and fixture.
-- [ ] **Phase 5: Agents and Evidence** - Mutation commands, static report, redaction, and export.
+- [x] **Phase 5: Agents and Evidence** - Mutation commands, static report, redaction, and export. (completed 2026-09-13)
 - [ ] **Phase 6: Candle and Portfolio** - Candle backend, Python parity, and reusable portfolio packs.
 
 ## Phase Details
@@ -64,7 +64,18 @@ evidence, WCAG AA conformance, live ranking, or AI citations.
 ### Phase 5: Agents and Evidence
 **Goal**: Drive provider-neutral mutations and produce auditable static reports and redacted bundles.
 **Depends on**: Phase 4
-**Plans**: TBD
+**Plans**: 13 tracked stories; complete 2026-09-13
+
+Manual and exact-executable-allowlisted command mutations stay in isolated Git
+worktrees. Bounded serial scheduling, frozen hard gates, exact-commit decisions,
+journal recovery, independent verification, JSON/HTML reports, and selected
+redacted local export pass disposable-repository integration tests. A synthetic
+product-page loop keeps one valid improvement and discards a higher-scoring
+failed-CTA-gate regression after a simulated post-commit interruption. Caller
+checkout remains unchanged. Separate Chromium Product Web pack validates local
+browser, accessibility, SEO/GEO, and report-import adapters. Neither fixture
+is live market evidence, a WCAG AA certificate, or an autonomous product launch.
+External writes, deploy, outreach, payment, and gate movement remain denied.
 
 ### Phase 6: Candle and Portfolio
 **Goal**: Add Candle training, parity fixtures, and reusable weekly-bet manifests after product engine is usable.
@@ -79,5 +90,5 @@ evidence, WCAG AA conformance, live ranking, or AI citations.
 | 2. Git Loop | 4/4 | Complete | 2026-09-12 |
 | 3. Evaluator SDK | 8/8 | Complete | 2026-09-13 |
 | 4. Product Web | 9/9 | Complete | 2026-09-13 |
-| 5. Agents and Evidence | 0/TBD | Not started | - |
+| 5. Agents and Evidence | 13/13 | Complete | 2026-09-13 |
 | 6. Candle and Portfolio | 0/TBD | Not started | - |

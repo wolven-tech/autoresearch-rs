@@ -47,6 +47,12 @@ impl OfflinePack {
             while !worker_stop.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        stream
+                            .set_nonblocking(false)
+                            .expect("blocking accepted fixture stream");
+                        stream
+                            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                            .expect("bounded fixture request read");
                         let mut request = [0_u8; 4096];
                         let count = stream.read(&mut request).expect("request");
                         let text = String::from_utf8_lossy(&request[..count]);
@@ -111,9 +117,15 @@ impl Drop for OfflinePack {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(worker) = self.worker.take() {
-            worker.join().expect("fixture worker");
+            let outcome = worker.join();
+            if !thread::panicking() {
+                outcome.expect("fixture worker");
+            }
         }
-        fs::remove_dir_all(&self.root).expect("owned pack cleanup");
+        let cleanup = fs::remove_dir_all(&self.root);
+        if !thread::panicking() {
+            cleanup.expect("owned pack cleanup");
+        }
     }
 }
 

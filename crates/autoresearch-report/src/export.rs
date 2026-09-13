@@ -245,10 +245,11 @@ fn looks_like_process_log(path: &str, name: &str) -> bool {
         .to_ascii_lowercase();
     let label = name.to_ascii_lowercase();
     matches!(
-        Path::new(&filename).extension().and_then(|part| part.to_str()),
+        Path::new(&filename)
+            .extension()
+            .and_then(|part| part.to_str()),
         Some("log" | "jsonl")
-    )
-        || matches!(filename.as_str(), "log.txt" | "stdout.txt" | "stderr.txt")
+    ) || matches!(filename.as_str(), "log.txt" | "stdout.txt" | "stderr.txt")
         || matches!(
             label.as_str(),
             "log" | "raw log" | "process log" | "stdout" | "stderr"

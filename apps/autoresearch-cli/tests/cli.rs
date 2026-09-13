@@ -14,6 +14,7 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 static EVALUATOR: OnceLock<PathBuf> = OnceLock::new();
 static MUTATOR: OnceLock<PathBuf> = OnceLock::new();
 static IMPROVING_EVALUATOR: OnceLock<PathBuf> = OnceLock::new();
+static PRODUCT_WEB_LOOP_EVALUATOR: OnceLock<PathBuf> = OnceLock::new();
 
 fn evaluator_fixture() -> &'static PathBuf {
     EVALUATOR.get_or_init(|| {
@@ -63,6 +64,25 @@ fn improving_evaluator_fixture() -> &'static PathBuf {
             .arg(source)
             .output()
             .expect("compile Rust improving evaluator fixture");
+        assert_success(&output);
+        binary
+    })
+}
+
+fn product_web_loop_evaluator_fixture() -> &'static PathBuf {
+    PRODUCT_WEB_LOOP_EVALUATOR.get_or_init(|| {
+        let binary = std::env::temp_dir().join(format!(
+            "autoresearch-cli-product-web-loop-evaluator-{}",
+            std::process::id()
+        ));
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/product_web_loop_evaluator.rs");
+        let output = Command::new("rustc")
+            .args(["--edition=2024", "-o"])
+            .arg(&binary)
+            .arg(source)
+            .output()
+            .expect("compile Rust product-web loop fixture");
         assert_success(&output);
         binary
     })
@@ -147,6 +167,50 @@ impl TestRepository {
                 .replace("args = [\"json-numeric\"]", "args = []"),
         )
         .expect("set improving evaluator");
+    }
+
+    fn configure_product_web_loop(&self) {
+        let evaluator = product_web_loop_evaluator_fixture();
+        let manifest = format!(
+            r#"schema_version = 1
+
+[experiment]
+name = "disposable product-web loop fixture"
+[experiment.objective]
+name = "fixture_content_items"
+direction = "maximize"
+[experiment.budget]
+max_candidates = 2
+max_failures = 1
+wall_clock_seconds = 120
+
+[scope]
+mutable_paths = ["site/index.html"]
+
+[agent]
+program = "manual"
+timeout_seconds = 20
+
+[[evaluators]]
+id = "fixture_product_web"
+hard_gates = ["cta_present"]
+[evaluators.command]
+program = "{}"
+timeout_seconds = 20
+[[evaluators.metrics]]
+name = "fixture_content_items"
+kind = "objective"
+direction = "maximize"
+"#,
+            evaluator.display()
+        );
+        fs::write(self.0.join("autoresearch.toml"), manifest).expect("write loop contract");
+        fs::create_dir(self.0.join("site")).expect("create disposable site");
+        fs::write(
+            self.0.join("site/index.html"),
+            "<!doctype html><title>Fixture</title><main><p>Baseline</p><a href=\"/start\">Start</a></main>\n",
+        )
+        .expect("write baseline product page");
     }
 }
 
@@ -245,17 +309,20 @@ fn report_replays_frozen_baseline_without_mutating_repository() {
     assert_eq!(mixed.status.code(), Some(3));
     let export_root = repository.0.with_extension("exports");
     fs::create_dir(&export_root).expect("external export root");
-    let exported = run_cli(
-        &repository.0,
-        &[
+    let exported = Command::new(env!("CARGO_BIN_EXE_autoresearch"))
+        .arg("--repository")
+        .arg(&repository.0)
+        .args([
             "--json",
             "export",
             "--run-id",
             run_id,
             "--export-root",
             export_root.to_str().expect("export root UTF-8"),
-        ],
-    );
+        ])
+        .env("STRIPE_SECRET_KEY", "sk_live_ambientfixture123456")
+        .output()
+        .expect("export with ambient credential");
     assert_success(&exported);
     let exported: Value = serde_json::from_slice(&exported.stdout).expect("export JSON");
     assert_eq!(exported["command"], "export");
@@ -278,9 +345,163 @@ fn report_replays_frozen_baseline_without_mutating_repository() {
     assert!(bundle.join("report.html").is_file());
     assert!(bundle.join("report.json").is_file());
     assert!(!bundle.join("journal.jsonl").exists());
+    for member in ["report.json", "report.html", "provenance.json"] {
+        let contents = fs::read_to_string(bundle.join(member)).expect("bundle member");
+        assert!(!contents.contains("sk_live_ambientfixture123456"));
+    }
     assert_eq!(
         fs::read(run_dir.join("journal.jsonl")).expect("journal unchanged"),
         journal_before
+    );
+    assert_eq!(git_text(&repository.0, &["status", "--porcelain=v1"]), "");
+    fs::remove_dir_all(export_root).expect("remove owned export fixture");
+}
+
+#[test]
+fn disposable_product_web_loop_keeps_improvement_discards_failed_gate_and_recovers() {
+    let repository = TestRepository::new();
+    assert_success(&run_cli(&repository.0, &["init"]));
+    repository.configure_product_web_loop();
+    repository.commit_contract();
+    let caller_head = git_text(&repository.0, &["rev-parse", "HEAD"]);
+    let caller_page = fs::read(repository.0.join("site/index.html")).expect("baseline page");
+
+    let baseline = run_cli(&repository.0, &["--json", "baseline"]);
+    assert_success(&baseline);
+    let baseline: Value = serde_json::from_slice(&baseline.stdout).expect("baseline JSON");
+    let run_id = baseline["run_id"].as_str().expect("run ID");
+    let run_directory = PathBuf::from(baseline["run_directory"].as_str().expect("run directory"));
+    let first = run_cli(&repository.0, &["--json", "run", "--run-id", run_id]);
+    assert_success(&first);
+    let first: Value = serde_json::from_slice(&first.stdout).expect("first preparation");
+    let first_worktree = PathBuf::from(first["worktree"].as_str().expect("first worktree"));
+    fs::write(
+        first_worktree.join("site/index.html"),
+        "<!doctype html><title>Fixture</title><main><p>Baseline</p><p>More detail</p><a href=\"/start\">Start</a></main>\n",
+    )
+    .expect("first page improvement");
+    let kept = run_cli(
+        &repository.0,
+        &[
+            "--json",
+            "run",
+            "--run-id",
+            run_id,
+            "--hypothesis",
+            "add detail while retaining CTA",
+        ],
+    );
+    assert_success(&kept);
+    let kept: Value = serde_json::from_slice(&kept.stdout).expect("kept result");
+    assert_eq!(kept["finalization"]["outcome"], "kept");
+    let kept_commit = kept["commit"].as_str().expect("kept commit");
+
+    let second = run_cli(&repository.0, &["--json", "run", "--run-id", run_id]);
+    assert_success(&second);
+    let second: Value = serde_json::from_slice(&second.stdout).expect("second preparation");
+    let second_worktree = PathBuf::from(second["worktree"].as_str().expect("second worktree"));
+    fs::write(
+        second_worktree.join("site/index.html"),
+        "<!doctype html><title>Fixture</title><main><p>Baseline</p><p>More detail</p><p>Extra detail</p></main>\n",
+    )
+    .expect("failed-gate regression");
+    git(&second_worktree, &["add", "site/index.html"]);
+    git(
+        &second_worktree,
+        &[
+            "commit",
+            "-q",
+            "-m",
+            "test: simulate crash after candidate commit",
+        ],
+    );
+    let regressed_commit = git_text(&second_worktree, &["rev-parse", "HEAD"]);
+    let recovered = run_cli(&repository.0, &["--json", "resume", "--run-id", run_id]);
+    assert_success(&recovered);
+    let recovered: Value = serde_json::from_slice(&recovered.stdout).expect("recovery JSON");
+    assert_eq!(recovered["status"], "candidate_evaluated");
+    assert_eq!(recovered["commit"], regressed_commit);
+    assert_eq!(recovered["finalization"]["outcome"], "discarded");
+    assert_eq!(
+        recovered["snapshot"]["measurements"][0]["outcome"]["passed"],
+        false
+    );
+    let retained_ref = format!("refs/heads/autoresearch/{run_id}");
+    assert_eq!(
+        git_text(&repository.0, &["rev-parse", &retained_ref]),
+        kept_commit
+    );
+
+    let stopped = run_cli(&repository.0, &["--json", "run", "--run-id", run_id]);
+    assert_success(&stopped);
+    let stopped: Value = serde_json::from_slice(&stopped.stdout).expect("bounded stop");
+    assert_eq!(stopped["status"], "stopped");
+    assert_eq!(stopped["stop_reason"], "candidate_limit");
+    let verified = run_cli(&repository.0, &["--json", "verify", "--run-id", run_id]);
+    assert_success(&verified);
+    let verified: Value = serde_json::from_slice(&verified.stdout).expect("verify JSON");
+    assert_eq!(verified["status"], "matched");
+    assert_eq!(verified["verified_commit"], kept_commit);
+
+    assert_product_web_loop_evidence(
+        &repository,
+        run_id,
+        kept_commit,
+        &run_directory,
+        &caller_head,
+        &caller_page,
+    );
+}
+
+fn assert_product_web_loop_evidence(
+    repository: &TestRepository,
+    run_id: &str,
+    kept_commit: &str,
+    run_directory: &Path,
+    caller_head: &str,
+    caller_page: &[u8],
+) {
+    let journal_before = fs::read(run_directory.join("journal.jsonl")).expect("decision trail");
+    let report = run_cli(&repository.0, &["--json", "report", "--run-id", run_id]);
+    assert_success(&report);
+    let report: Value = serde_json::from_slice(&report.stdout).expect("report JSON");
+    assert_eq!(report["candidates"].as_array().expect("timeline").len(), 2);
+    assert_eq!(report["candidates"][0]["finalization"]["outcome"], "kept");
+    assert_eq!(
+        report["candidates"][1]["finalization"]["outcome"],
+        "discarded"
+    );
+    assert_eq!(report["current_best_commit"], kept_commit);
+    let export_root = repository.0.with_extension("loop-export");
+    fs::create_dir(&export_root).expect("external export root");
+    let exported = run_cli(
+        &repository.0,
+        &[
+            "--json",
+            "export",
+            "--run-id",
+            run_id,
+            "--export-root",
+            export_root.to_str().expect("export root UTF-8"),
+        ],
+    );
+    assert_success(&exported);
+    let exported: Value = serde_json::from_slice(&exported.stdout).expect("export JSON");
+    let bundle = PathBuf::from(exported["directory"].as_str().expect("bundle"));
+    let exported_report: Value =
+        serde_json::from_slice(&fs::read(bundle.join("report.json")).expect("report member"))
+            .expect("report member JSON");
+    assert_eq!(exported_report["candidates"], report["candidates"]);
+    assert!(bundle.join("report.html").is_file());
+    assert!(bundle.join("provenance.json").is_file());
+    assert_eq!(
+        fs::read(run_directory.join("journal.jsonl")).expect("unchanged trail"),
+        journal_before
+    );
+    assert_eq!(git_text(&repository.0, &["rev-parse", "HEAD"]), caller_head);
+    assert_eq!(
+        fs::read(repository.0.join("site/index.html")).expect("caller page"),
+        caller_page
     );
     assert_eq!(git_text(&repository.0, &["status", "--porcelain=v1"]), "");
     fs::remove_dir_all(export_root).expect("remove owned export fixture");
