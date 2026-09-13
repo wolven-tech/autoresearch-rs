@@ -6,8 +6,13 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+mod measure;
 mod model;
 mod train;
+pub use measure::{
+    MeasureFailure, RunDiagnostics, ValidationEvidence, ValidationObjective,
+    environment_fingerprint, measure_validation,
+};
 pub use model::{ModelEvidence, TinyGpt, TinyModelConfig};
 pub use train::{TrainConfig, TrainEvidence, TrainFailure, train_fixed_budget};
 

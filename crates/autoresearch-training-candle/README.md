@@ -27,3 +27,13 @@ sampling; later parity report must keep that distinction visible. Candle
 allocation errors return `TrainFailure::Backend`; evaluator process boundary
 classifies process death as `non_zero_exit` and timeout as `timeout`. Neither
 path yields an objective value.
+
+`measure_validation` evaluates every target byte in frozen validation text,
+splitting documents into non-overlapping context blocks with reset position
+indices. `val_bpb` is mean next-byte negative log likelihood in bits. It is
+stored alone under `objective`; runtime, training/validation token counts,
+model shape, CPU/f32, environment fingerprint, and unavailable (`null`) peak
+memory sit under `diagnostics`. Exact training trace is attached. A changed
+environment fingerprint, missing sample, or nonfinite loss returns an error
+without metric. This byte-level objective must not be compared directly with
+upstream BPE validation scores.
