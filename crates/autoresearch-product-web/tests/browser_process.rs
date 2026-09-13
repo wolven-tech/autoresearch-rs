@@ -115,11 +115,18 @@ fn declared_browser_subprocess_returns_one_validated_jsonl_response() {
     )
     .expect("browser subprocess");
     assert_eq!(result.output.artifacts().len(), 4);
-    assert_eq!(result.output.observations().len(), 4);
-    assert!(result.output.observations().iter().all(|observation| {
-        observation.detail.contains("http_status=Some(200)")
-            && observation.detail.contains("console_errors=1")
-    }));
+    assert_eq!(result.output.observations().len(), 12);
+    assert!(
+        result
+            .output
+            .observations()
+            .iter()
+            .filter(|observation| observation.code.starts_with("browser_viewport_"))
+            .all(|observation| {
+                observation.detail.contains("http_status=Some(200)")
+                    && observation.detail.contains("console_errors=1")
+            })
+    );
     assert!(result.output.measurements().iter().any(|measurement| {
         matches!(measurement, Measurement::HardGate { name, outcome }
             if name == "browser_route_status" && outcome.passed())

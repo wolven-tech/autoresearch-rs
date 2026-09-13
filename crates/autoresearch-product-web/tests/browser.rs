@@ -181,7 +181,12 @@ fn rendered_local_page_records_real_viewport_and_screenshot() {
             .iter()
             .map(|artifact| artifact.name.as_str())
             .collect::<Vec<_>>(),
-        ["viewport_320", "viewport_390", "viewport_768", "viewport_1280"]
+        [
+            "viewport_320",
+            "viewport_390",
+            "viewport_768",
+            "viewport_1280"
+        ]
     );
 }
 
@@ -290,4 +295,63 @@ fn unreachable_declared_route_cannot_pass_http_gate() {
         }
         Err(error) => panic!("unexpected navigation classification: {error}"),
     }
+}
+
+#[test]
+fn accessibility_probe_separates_visible_focus_and_known_contrast_failure() {
+    let Some(chromium) = chromium() else {
+        return;
+    };
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.context.candidate_worktree().join("index.html"),
+        "<!doctype html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Accessibility fixture</title><style>body{background:#fff;color:#111}button:focus-visible{outline:3px solid #003399}#low{color:#aaa;background:#fff}</style></head><body><h1>Accessibility fixture</h1><button id=\"primary\">Run check</button><p id=\"low\">Low contrast sample</p></body></html>",
+    )
+    .expect("accessibility fixture");
+    let target = Url::from_file_path(fixture.context.candidate_worktree().join("index.html"))
+        .expect("file URL");
+    let evidence = inspect_local_page(&fixture.context, target.as_str(), &chromium, &[390])
+        .expect("accessibility probe");
+    let accessibility = &evidence.viewports[0].accessibility;
+    assert_eq!(accessibility.focusable_count, 1);
+    assert_eq!(accessibility.tab_targets, ["button#primary"]);
+    assert_eq!(accessibility.visible_focus_count, 1);
+    assert_eq!(accessibility.keyboard_status(), "pass");
+    assert_eq!(accessibility.contrast_status(), "fail");
+    assert!(
+        accessibility
+            .contrast_failures
+            .iter()
+            .any(|item| item.starts_with("p#low ratio="))
+    );
+    let output = browser_output(&fixture.context, "browser", &evidence).expect("diagnostic output");
+    assert!(output.observations().iter().any(|observation| {
+        observation.code == "a11y_contrast_390"
+            && observation.detail.contains("status=fail")
+            && observation
+                .detail
+                .contains("artifact=browser/viewport-390.png")
+    }));
+}
+
+#[test]
+fn accessibility_probe_marks_missing_focus_indicator_as_failure() {
+    let Some(chromium) = chromium() else {
+        return;
+    };
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.context.candidate_worktree().join("index.html"),
+        "<!doctype html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Focus fixture</title><style>button:focus,button:focus-visible{outline:none;box-shadow:none}</style></head><body><h1>Focus fixture</h1><button id=\"missing-focus\">Continue</button></body></html>",
+    )
+    .expect("focus fixture");
+    let target = Url::from_file_path(fixture.context.candidate_worktree().join("index.html"))
+        .expect("file URL");
+    let evidence = inspect_local_page(&fixture.context, target.as_str(), &chromium, &[390])
+        .expect("focus probe");
+    assert_eq!(
+        evidence.viewports[0].accessibility.keyboard_status(),
+        "fail"
+    );
+    assert_eq!(evidence.viewports[0].accessibility.visible_focus_count, 0);
 }

@@ -1,5 +1,6 @@
 //! Headless Chromium inspection of rendered local product pages.
 
+use crate::accessibility::{self, AccessibilityEvidence};
 use autoresearch_config::ValidatedManifest;
 use autoresearch_core::{GateOutcome, Measurement};
 use autoresearch_evaluator::{
@@ -78,6 +79,8 @@ pub struct ViewportEvidence {
     pub runtime_exceptions: u32,
     /// Browser log error entries observed before capture.
     pub log_errors: u32,
+    /// Bounded keyboard/focus/contrast diagnostics for this viewport.
+    pub accessibility: AccessibilityEvidence,
     /// Visible elements extending beyond right viewport edge (bounded sample).
     pub overflow_elements: Vec<String>,
     /// Visible interactive controls without an accessible-name approximation.
@@ -210,7 +213,20 @@ pub fn browser_payload(
             media_type: "image/png".into(),
         })
         .collect();
-    let observations = evidence
+    EvaluatorOutput {
+        evaluator_id: evaluator_id.into(),
+        run_id: context.run_id().to_string(),
+        baseline_commit: context.baseline_commit().to_string(),
+        evaluated_commit: context.evaluated_commit().to_string(),
+        measurements,
+        observations: browser_observations(evidence),
+        artifacts,
+        warnings: vec![],
+    }
+}
+
+fn browser_observations(evidence: &BrowserEvidence) -> Vec<Observation> {
+    let mut observations: Vec<Observation> = evidence
         .viewports
         .iter()
         .map(|viewport| Observation {
@@ -228,16 +244,33 @@ pub fn browser_payload(
             ),
         })
         .collect();
-    EvaluatorOutput {
-        evaluator_id: evaluator_id.into(),
-        run_id: context.run_id().to_string(),
-        baseline_commit: context.baseline_commit().to_string(),
-        evaluated_commit: context.evaluated_commit().to_string(),
-        measurements,
-        observations,
-        artifacts,
-        warnings: vec![],
+    for viewport in &evidence.viewports {
+        let route = evidence.route_name.as_deref().unwrap_or("direct");
+        observations.push(Observation {
+            code: format!("a11y_keyboard_focus_{}", viewport.requested_width),
+            detail: format!(
+                "rule=keyboard_focus_sample; status={}; route={route}; viewport={}; artifact={}; focusable={}; reached={}; visible={}",
+                viewport.accessibility.keyboard_status(),
+                viewport.requested_width,
+                viewport.screenshot_relative_path,
+                viewport.accessibility.focusable_count,
+                viewport.accessibility.tab_targets.len(),
+                viewport.accessibility.visible_focus_count
+            ),
+        });
+        observations.push(Observation {
+            code: format!("a11y_contrast_{}", viewport.requested_width),
+            detail: format!(
+                "rule=solid_colour_contrast_sample; status={}; route={route}; viewport={}; artifact={}; failures={}; unavailable={}",
+                viewport.accessibility.contrast_status(),
+                viewport.requested_width,
+                viewport.screenshot_relative_path,
+                viewport.accessibility.contrast_failures.len(),
+                viewport.accessibility.contrast_unavailable_count
+            ),
+        });
     }
+    observations
 }
 
 #[derive(Debug, Deserialize)]
@@ -401,6 +434,7 @@ fn inspect_viewport(
     let final_url = tab.get_url();
     validate_local_target(&final_url, context.candidate_worktree())?;
     let dom = read_dom(&tab, width)?;
+    let accessibility = accessibility::inspect(&tab)?;
     let screenshot_relative_path = save_screenshot(&tab, screenshot_root, width)?;
     let page = PageIdentity {
         final_url,
@@ -423,6 +457,7 @@ fn inspect_viewport(
         console_errors: observers.console_errors.load(Ordering::Relaxed),
         runtime_exceptions: observers.runtime_exceptions.load(Ordering::Relaxed),
         log_errors: observers.log_errors.load(Ordering::Relaxed),
+        accessibility,
         overflow_elements: dom.overflow_elements,
         unnamed_controls: dom.unnamed_controls,
         blocked_nonlocal_requests: guard.blocked.load(Ordering::Relaxed),
