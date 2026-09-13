@@ -67,3 +67,5 @@ maximized. Process mode matters for resource failures: crash or OS OOM kill
 becomes a nonzero-exit failure; timeout and cancellation terminate child.
 None yields a comparable objective or passed gate. Native mode is suitable
 only for trusted in-process fixture tests, not resource isolation.
+
+Cross-language status and exact limits: [tiny parity report](../../docs/training-parity.md).

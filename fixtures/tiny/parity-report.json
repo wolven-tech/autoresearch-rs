@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "fixture": "utf8_bytes_bos_v1",
+  "seed": 23,
+  "rust": {
+    "device": "cpu",
+    "dtype": "f32",
+    "model": "compact_gpt_257x8x16_2_heads_1_layer"
+  },
+  "python": {
+    "device": "cpu",
+    "dtype": "f64_arithmetic_with_f32_initial_weights",
+    "reference": "python_stdlib_tiny_model_v1"
+  },
+  "tolerances": {
+    "initial_parameter_abs": 0.000001,
+    "forward_logit_max_abs": 0.0001,
+    "forward_loss_abs": 0.0001,
+    "selected_sgd_step_abs": 0.0001,
+    "selected_gradient_abs": 0.001
+  },
+  "observed": {
+    "token_ids": "exact",
+    "batch_order": "exact",
+    "batch_inputs_and_targets": "exact",
+    "forward_logit_max_abs_error": 0.000000067,
+    "forward_loss_abs_error": 0.000000199,
+    "selected_sgd_step_abs_error": 0.000000001,
+    "python_selected_gradient": 0.001110200,
+    "rust_selected_gradient": 0.001110137,
+    "rust_full_step_vs_python_selected_step_loss_gap": 0.011730936
+  },
+  "discrepancies": [
+    "Python reference uses f64 arithmetic after f32 initialization; Candle uses f32 throughout.",
+    "Output[0,0] finite-difference SGD coordinate agrees; Python reference does not implement a full optimizer update. After one step, Rust full-SGD loss differs from Python selected-coordinate-only loss by 0.011730936, so full-step parity fails/is untested.",
+    "Tiny reference uses byte IDs, fixed first batch, learned position embeddings, ordinary attention, and stateless SGD; pinned upstream uses BPE, packing, RoPE, CUDA/FA3, and AdamW.",
+    "No H100 throughput, real corpus, full-model gradient, or upstream training parity is established."
+  ],
+  "claim": "tiny_fixture_partial_parity_only"
+}
