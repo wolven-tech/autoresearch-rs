@@ -66,6 +66,10 @@ pub struct ViewportEvidence {
     pub observed_width: u32,
     /// Document width including horizontal overflow.
     pub document_width: u32,
+    /// Reduced-motion media setting requested for this capture.
+    pub reduced_motion_requested: bool,
+    /// Browser-observed `prefers-reduced-motion: reduce` match.
+    pub reduced_motion_observed: bool,
     /// Main document HTTP status, absent for `file://` fixtures.
     pub http_status: Option<u16>,
     /// Runtime console error calls observed before capture.
@@ -114,7 +118,8 @@ pub struct BrowserEvidence {
 /// Converts rendered evidence into declared hard gates and screenshots.
 ///
 /// Gate names are `browser_viewport_exact`, `browser_no_overflow`,
-/// `browser_controls_named`, and `browser_local_only`; manifest routes also
+/// `browser_controls_named`, `browser_local_only`, and
+/// `browser_motion_setting`; manifest routes also
 /// emit `browser_route_status`. These checks are deliberately narrower than
 /// WCAG AA, Lighthouse, SEO, or market evidence.
 /// Frozen manifest must declare these exact names before a snapshot can be
@@ -173,6 +178,12 @@ pub fn browser_payload(
                 .iter()
                 .all(|viewport| viewport.blocked_nonlocal_requests == 0),
         ),
+        (
+            "browser_motion_setting",
+            evidence.viewports.iter().all(|viewport| {
+                viewport.reduced_motion_observed == viewport.reduced_motion_requested
+            }),
+        ),
     ];
     if let Some(expected) = evidence.expected_http_status {
         gates.push((
@@ -205,13 +216,15 @@ pub fn browser_payload(
         .map(|viewport| Observation {
             code: format!("browser_viewport_{}", viewport.requested_width),
             detail: format!(
-                "http_status={:?}; console_errors={}; runtime_exceptions={}; log_errors={}; observed_width={}; document_width={}",
+                "http_status={:?}; console_errors={}; runtime_exceptions={}; log_errors={}; observed_width={}; document_width={}; reduced_motion_requested={}; reduced_motion_observed={}",
                 viewport.http_status,
                 viewport.console_errors,
                 viewport.runtime_exceptions,
                 viewport.log_errors,
                 viewport.observed_width,
-                viewport.document_width
+                viewport.document_width,
+                viewport.reduced_motion_requested,
+                viewport.reduced_motion_observed
             ),
         })
         .collect();
@@ -237,6 +250,7 @@ struct DomEvidence {
     robots: Option<String>,
     observed_width: u32,
     document_width: u32,
+    reduced_motion_observed: bool,
     overflow_elements: Vec<String>,
     unnamed_controls: Vec<String>,
 }
@@ -401,6 +415,8 @@ fn inspect_viewport(
         requested_width: width,
         observed_width: dom.observed_width,
         document_width: dom.document_width,
+        reduced_motion_requested: reduced_motion,
+        reduced_motion_observed: dom.reduced_motion_observed,
         http_status: u16::try_from(observers.http_status.load(Ordering::Relaxed))
             .ok()
             .filter(|value| *value != 0),
@@ -656,6 +672,7 @@ const RENDERED_DOM_SCRIPT: &str = r#"JSON.stringify((() => {
     robots: document.querySelector('meta[name="robots"]')?.content?.trim() || null,
     observed_width: innerWidth,
     document_width: document.documentElement.scrollWidth,
+    reduced_motion_observed: matchMedia('(prefers-reduced-motion: reduce)').matches,
     overflow_elements: overflow,
     unnamed_controls: unnamed
   };

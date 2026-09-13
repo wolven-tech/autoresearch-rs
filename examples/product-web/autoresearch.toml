@@ -22,7 +22,7 @@ timeout_seconds = 30
 
 [[evaluators]]
 id = "product_web"
-hard_gates = ["browser_viewport_exact", "browser_no_overflow", "browser_controls_named", "browser_local_only", "browser_route_status"]
+hard_gates = ["browser_viewport_exact", "browser_no_overflow", "browser_controls_named", "browser_local_only", "browser_motion_setting", "browser_route_status"]
 
 [evaluators.command]
 program = "autoresearch-web-evaluator"

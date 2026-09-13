@@ -151,7 +151,7 @@ fn rendered_local_page_records_real_viewport_and_screenshot() {
     assert_eq!(evidence.viewports.len(), 4);
     let output =
         browser_output(&fixture.context, "browser", &evidence).expect("valid browser output");
-    assert_eq!(output.measurements().len(), 4);
+    assert_eq!(output.measurements().len(), 5);
     assert_eq!(output.artifacts().len(), 4);
     assert!(output.measurements().iter().any(|measurement| {
         matches!(measurement, Measurement::HardGate { name, outcome }
@@ -161,14 +161,28 @@ fn rendered_local_page_records_real_viewport_and_screenshot() {
         assert_eq!(viewport.requested_width, expected_width);
         assert_eq!(viewport.observed_width, expected_width);
         assert!(viewport.document_width <= viewport.observed_width);
+        assert!(viewport.reduced_motion_requested);
+        assert!(viewport.reduced_motion_observed);
         assert!(viewport.unnamed_controls.is_empty());
         assert!(viewport.blocked_external_network_requests >= 1);
+        assert_eq!(
+            viewport.screenshot_relative_path,
+            format!("browser/viewport-{expected_width}.png")
+        );
         let screenshot = fixture
             .context
             .artifact_directory()
             .join(&viewport.screenshot_relative_path);
         assert!(fs::metadata(screenshot).expect("screenshot").len() > 0);
     }
+    assert_eq!(
+        output
+            .artifacts()
+            .iter()
+            .map(|artifact| artifact.name.as_str())
+            .collect::<Vec<_>>(),
+        ["viewport_320", "viewport_390", "viewport_768", "viewport_1280"]
+    );
 }
 
 #[test]
@@ -237,7 +251,7 @@ fn declared_route_records_http_status_console_errors_and_frozen_name() {
         assert!(viewport.console_errors >= 1, "{viewport:?}");
     }
     let output = browser_output(&fixture.context, "product_web", &evidence).expect("typed output");
-    assert_eq!(output.measurements().len(), 5);
+    assert_eq!(output.measurements().len(), 6);
     assert!(output.measurements().iter().any(|measurement| {
         matches!(measurement, Measurement::HardGate { name, outcome }
             if name == "browser_route_status" && outcome.passed())
