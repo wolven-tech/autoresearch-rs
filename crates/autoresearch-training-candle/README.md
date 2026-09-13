@@ -61,7 +61,8 @@ bounded JSONL protocol for Phase 5 runner. Example config:
 ```
 
 Declare evaluator ID `candle_tiny_training`, hard gate
-`tiny_fixture_verified`, objective `val_bpb` minimized, and diagnostic metrics
+`tiny_fixture_verified`, objective `val_bpb` minimized, tie-breaker
+`parameter_count` minimized, and diagnostic metrics
 `runtime_millis` minimized plus `training_tokens` and `validation_tokens`
 maximized. Process mode matters for resource failures: crash or OS OOM kill
 becomes a nonzero-exit failure; timeout and cancellation terminate child.

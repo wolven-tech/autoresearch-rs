@@ -1,0 +1,53 @@
+schema_version = 1
+
+[experiment]
+name = "bounded tiny Candle training"
+
+[experiment.objective]
+name = "val_bpb"
+direction = "minimize"
+
+[experiment.budget]
+max_candidates = 1
+max_failures = 1
+wall_clock_seconds = 120
+
+[scope]
+mutable_paths = ["training-config.json"]
+
+[agent]
+program = "manual"
+timeout_seconds = 10
+
+[[evaluators]]
+id = "candle_tiny_training"
+hard_gates = ["tiny_fixture_verified"]
+
+[evaluators.command]
+program = "autoresearch-training-evaluator"
+timeout_seconds = 40
+
+[[evaluators.metrics]]
+name = "val_bpb"
+kind = "objective"
+direction = "minimize"
+
+[[evaluators.metrics]]
+name = "parameter_count"
+kind = "tie_breaker"
+direction = "minimize"
+
+[[evaluators.metrics]]
+name = "runtime_millis"
+kind = "diagnostic"
+direction = "minimize"
+
+[[evaluators.metrics]]
+name = "training_tokens"
+kind = "diagnostic"
+direction = "maximize"
+
+[[evaluators.metrics]]
+name = "validation_tokens"
+kind = "diagnostic"
+direction = "maximize"

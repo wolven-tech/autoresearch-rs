@@ -229,6 +229,8 @@ dependencies = [
  "autoresearch-config",
  "autoresearch-core",
  "autoresearch-evaluator",
+ "autoresearch-market",
+ "autoresearch-report",
  "autoresearch-runner",
  "candle-core",
  "candle-nn",

@@ -1,13 +1,16 @@
 //! Local bounded Candle evaluation through Phase 3 SDK and Phase 5 runner.
 
 use autoresearch_config::{Evaluator, FrozenIdentity, ValidatedManifest};
-use autoresearch_core::{JournalEntry, JournalEvent, Measurement, NumericMetricKind};
+use autoresearch_core::{Disposition, JournalEntry, JournalEvent, Measurement, NumericMetricKind};
 use autoresearch_evaluator::{
     CancellationToken, EvaluationContext, EvaluatorFailure, FailureClass, NativeEvaluationError,
     NativeEvaluator, ValidatedOutput, evaluate_native,
 };
+use autoresearch_market::MarketEvidenceLedger;
+use autoresearch_report::build_report;
 use autoresearch_runner::{
-    BaselineCapture, BaselineExecutor, SubprocessBaselineExecutor, capture_existing_baseline,
+    BaselineCapture, BaselineExecutor, RunMutationMode, RunStep, SubprocessBaselineExecutor,
+    advance_run_once, capture_existing_baseline, load_report_source, verify_kept_commit,
 };
 use autoresearch_training_candle::TrainingEvaluator;
 use std::collections::BTreeMap;
@@ -45,6 +48,10 @@ timeout_seconds = 40
 [[evaluators.metrics]]
 name = "val_bpb"
 kind = "objective"
+direction = "minimize"
+[[evaluators.metrics]]
+name = "parameter_count"
+kind = "tie_breaker"
 direction = "minimize"
 [[evaluators.metrics]]
 name = "runtime_millis"
@@ -179,7 +186,7 @@ fn runner_captures_frozen_tiny_objective_and_run_owned_artifacts() {
     let BaselineCapture::Captured { snapshot, .. } = result else {
         panic!("expected captured tiny objective")
     };
-    assert_eq!(snapshot.measurements.len(), 5);
+    assert_eq!(snapshot.measurements.len(), 6);
     assert!(snapshot.measurements.iter().any(|measurement| matches!(
         measurement,
         Measurement::Numeric { name, metric_kind: NumericMetricKind::Objective, .. } if name == "val_bpb"
@@ -243,7 +250,7 @@ fn subprocess_runner_captures_tiny_training_through_jsonl_contract() {
     let BaselineCapture::Captured { snapshot, .. } = result else {
         panic!("expected subprocess training objective")
     };
-    assert_eq!(snapshot.measurements.len(), 5);
+    assert_eq!(snapshot.measurements.len(), 6);
     assert!(snapshot.measurements.iter().any(|measurement| matches!(
         measurement,
         Measurement::Numeric { name, metric_kind: NumericMetricKind::Objective, .. } if name == "val_bpb"
@@ -264,6 +271,88 @@ fn subprocess_runner_cancel_does_not_emit_score() {
         panic!("cancelled subprocess must not score")
     };
     assert_eq!(failure.class, FailureClass::Cancelled);
+}
+
+#[test]
+fn disposable_candidate_produces_exact_decision_journal_and_report() {
+    let binary = env!("CARGO_BIN_EXE_autoresearch-training-evaluator");
+    let example = include_str!("../../../examples/nanochat-candle/autoresearch.toml");
+    let manifest = example.replace("autoresearch-training-evaluator", binary);
+    ValidatedManifest::parse(&manifest).expect("checked-in nanochat example manifest");
+    let fixture = Fixture::with_manifest(&manifest);
+    let caller_head = git_text(&fixture.0, &["rev-parse", "HEAD"]);
+    let caller_config = fs::read(fixture.0.join("training-config.json")).expect("caller config");
+    let executor = SubprocessBaselineExecutor::new(1_048_576, 16_384, CancellationToken::default())
+        .expect("process caps");
+    let baseline = capture_existing_baseline(&fixture.0, "run-1", &executor, BTreeMap::new())
+        .expect("baseline");
+    assert!(matches!(baseline, BaselineCapture::Captured { .. }));
+    let prepared = advance_run_once(
+        &fixture.0,
+        "run-1",
+        &RunMutationMode::Manual,
+        None,
+        &executor,
+    )
+    .expect("prepare candidate");
+    let RunStep::AwaitingMutation { worktree, .. } = prepared else {
+        panic!("isolated candidate expected")
+    };
+    fs::write(
+        worktree.join("training-config.json"),
+        b"{\"steps\":8,\"max_wall_millis\":30000,\"learning_rate\":0.01}\n",
+    )
+    .expect("bounded parameter mutation");
+    let evaluated = advance_run_once(
+        &fixture.0,
+        "run-1",
+        &RunMutationMode::Manual,
+        Some("test eight fixed SGD steps"),
+        &executor,
+    )
+    .expect("evaluate candidate");
+    let RunStep::Evaluated(outcome) = evaluated else {
+        panic!("candidate decision expected")
+    };
+    assert_eq!(
+        git_text(&fixture.0, &["cat-file", "-t", &outcome.commit]),
+        "commit"
+    );
+    assert_eq!(outcome.snapshot.measurements.len(), 6);
+    assert_eq!(outcome.decision.disposition, Disposition::Keep);
+    let verified =
+        verify_kept_commit(&fixture.0, "run-1", &executor).expect("fresh kept-commit verification");
+    assert_eq!(verified.verified_commit, outcome.commit);
+    let fresh = verified
+        .fresh_snapshot
+        .as_ref()
+        .expect("fresh evaluator evidence");
+    let selected_bpb = numeric_value(&verified.selection_snapshot.measurements, "val_bpb");
+    let fresh_bpb = numeric_value(&fresh.measurements, "val_bpb");
+    assert!((selected_bpb - fresh_bpb).abs() <= 1.0e-6);
+    assert!(verified.evidence_path.is_file());
+    let journal = fs::read_to_string(fixture.0.join(".autoresearch/runs/run-1/journal.jsonl"))
+        .expect("decision journal");
+    assert!(journal.contains("candidate_decision_recorded"));
+    assert!(journal.contains("candidate_finalized"));
+    let source = load_report_source(&fixture.0, "run-1").expect("report source");
+    let report = build_report(&source, MarketEvidenceLedger { receipts: vec![] })
+        .expect("deterministic report");
+    assert_eq!(report.candidates.len(), 1);
+    assert_eq!(
+        report.candidates[0].candidate_commit.as_deref(),
+        Some(outcome.commit.as_str())
+    );
+    assert_eq!(report.candidates[0].changed_paths, ["training-config.json"]);
+    assert_eq!(report.candidates[0].artifacts.len(), 2);
+    assert!(report.candidates[0].decision.is_some());
+    assert!(report.candidates[0].finalization.is_some());
+    assert_eq!(git_text(&fixture.0, &["rev-parse", "HEAD"]), caller_head);
+    assert_eq!(
+        fs::read(fixture.0.join("training-config.json")).expect("caller remains"),
+        caller_config
+    );
+    assert_eq!(git_text(&fixture.0, &["status", "--porcelain=v1"]), "");
 }
 
 fn git(root: &Path, args: &[&str]) {
@@ -296,4 +385,18 @@ fn git_text(root: &Path, args: &[&str]) -> String {
         .expect("git UTF-8")
         .trim()
         .into()
+}
+
+fn numeric_value(measurements: &[Measurement], name: &str) -> f64 {
+    measurements
+        .iter()
+        .find_map(|measurement| match measurement {
+            Measurement::Numeric {
+                name: actual,
+                value,
+                ..
+            } if actual == name => Some(value.get()),
+            _ => None,
+        })
+        .expect("declared numeric metric")
 }

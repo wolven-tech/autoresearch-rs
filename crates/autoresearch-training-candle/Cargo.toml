@@ -20,6 +20,8 @@ thiserror.workspace = true
 
 [dev-dependencies]
 autoresearch-config = { path = "../autoresearch-config" }
+autoresearch-market = { path = "../autoresearch-market" }
+autoresearch-report = { path = "../autoresearch-report" }
 autoresearch-runner = { path = "../autoresearch-runner" }
 
 [lints]

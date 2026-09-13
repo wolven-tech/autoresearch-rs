@@ -170,6 +170,8 @@ fn build_output(
         .map_err(|_| failure(FailureClass::Validation, "training tokens exceed bound"))?;
     let val_tokens = u32::try_from(validation.diagnostics.validation_tokens)
         .map_err(|_| failure(FailureClass::Validation, "validation tokens exceed bound"))?;
+    let parameter_count = u32::try_from(validation.diagnostics.model.parameter_count)
+        .map_err(|_| failure(FailureClass::Validation, "parameter count exceeds bound"))?;
     let metrics = [
         Measurement::hard_gate("tiny_fixture_verified", true, None),
         Measurement::numeric(
@@ -177,6 +179,12 @@ fn build_output(
             NumericMetricKind::Objective,
             MetricDirection::Minimize,
             objective,
+        ),
+        Measurement::numeric(
+            "parameter_count",
+            NumericMetricKind::TieBreaker,
+            MetricDirection::Minimize,
+            f64::from(parameter_count),
         ),
         Measurement::numeric(
             "runtime_millis",
