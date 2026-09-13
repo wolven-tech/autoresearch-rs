@@ -290,6 +290,7 @@ pub struct WebTargets {
     lighthouse: Option<LighthouseSettings>,
     seo: Option<SeoSettings>,
     geo: Option<GeoSettings>,
+    production: Option<ProductionSettings>,
 }
 
 impl WebTargets {
@@ -339,6 +340,40 @@ impl WebTargets {
     #[must_use]
     pub const fn geo(&self) -> Option<&GeoSettings> {
         self.geo.as_ref()
+    }
+
+    /// Returns optional frozen read-only production probe allowlist.
+    #[must_use]
+    pub const fn production(&self) -> Option<&ProductionSettings> {
+        self.production.as_ref()
+    }
+}
+
+/// Exact HTTPS origins and paths allowed for optional read-only probes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProductionSettings {
+    origins: Vec<String>,
+    paths: Vec<String>,
+    max_redirects: u8,
+}
+
+impl ProductionSettings {
+    /// Returns exact canonical HTTPS origins.
+    #[must_use]
+    pub fn origins(&self) -> &[String] {
+        &self.origins
+    }
+
+    /// Returns exact origin-relative paths.
+    #[must_use]
+    pub fn paths(&self) -> &[String] {
+        &self.paths
+    }
+
+    /// Returns redirect bound.
+    #[must_use]
+    pub const fn max_redirects(&self) -> u8 {
+        self.max_redirects
     }
 }
 
@@ -582,6 +617,16 @@ struct RawWebTargets {
     seo: Option<RawSeoSettings>,
     #[serde(default)]
     geo: Option<RawGeoSettings>,
+    #[serde(default)]
+    production: Option<RawProductionSettings>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawProductionSettings {
+    origins: Vec<String>,
+    paths: Vec<String>,
+    max_redirects: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -827,6 +872,10 @@ fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError>
         .transpose()?;
     let seo = raw.seo.map(validate_seo_settings).transpose()?;
     let geo = raw.geo.map(validate_geo_settings).transpose()?;
+    let production = raw
+        .production
+        .map(validate_production_settings)
+        .transpose()?;
     Ok(WebTargets {
         origin: origin.origin().ascii_serialization(),
         routes,
@@ -836,6 +885,64 @@ fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError>
         lighthouse,
         seo,
         geo,
+        production,
+    })
+}
+
+fn validate_production_settings(
+    raw: RawProductionSettings,
+) -> Result<ProductionSettings, ManifestError> {
+    if raw.origins.is_empty()
+        || raw.origins.len() > 8
+        || raw.paths.is_empty()
+        || raw.paths.len() > 32
+        || raw.max_redirects > 5
+        || raw.paths.iter().any(|path| !valid_web_route_path(path))
+    {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.production".into(),
+            reason: "requires 1–8 exact HTTPS origins, 1–32 safe paths, and at most five redirects",
+        });
+    }
+    let mut origins = BTreeSet::new();
+    for origin in raw.origins {
+        let parsed = Url::parse(&origin).map_err(|_| ManifestError::InvalidWebTarget {
+            field: "web.production.origins".into(),
+            reason: "invalid HTTPS origin",
+        })?;
+        if parsed.scheme() != "https"
+            || parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.path() != "/"
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+            || origin != parsed.origin().ascii_serialization()
+        {
+            return Err(ManifestError::InvalidWebTarget {
+                field: "web.production.origins".into(),
+                reason: "must be exact canonical HTTPS origin without credentials or path",
+            });
+        }
+        if !origins.insert(origin) {
+            return Err(ManifestError::Duplicate {
+                kind: "production origin",
+                name: parsed.origin().ascii_serialization(),
+            });
+        }
+    }
+    let path_count = raw.paths.len();
+    let paths = raw.paths.into_iter().collect::<BTreeSet<_>>();
+    if paths.len() != path_count {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.production.paths".into(),
+            reason: "duplicate path",
+        });
+    }
+    Ok(ProductionSettings {
+        origins: origins.into_iter().collect(),
+        paths: paths.into_iter().collect(),
+        max_redirects: raw.max_redirects,
     })
 }
 
@@ -1218,6 +1325,13 @@ facts = { price = "£39 once", privacy = "Local-only" }
 max_passages = 16
 "#;
 
+    const PRODUCTION: &str = r#"
+[web.production]
+origins = ["https://fixture.example"]
+paths = ["/", "/ready"]
+max_redirects = 2
+"#;
+
     #[test]
     fn manifest_parses_and_adds_control_paths() {
         let manifest = ValidatedManifest::parse(VALID).expect("valid manifest");
@@ -1387,6 +1501,48 @@ max_passages = 16
             source.replace("max_passages = 16", "max_passages = 33"),
             source.replace("price =", "bad.key ="),
             source.replace("£39 once", ""),
+        ] {
+            assert!(ValidatedManifest::parse(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn production_probe_policy_is_disabled_by_default_and_exact_when_declared() {
+        assert!(
+            ValidatedManifest::parse(&format!("{VALID}{WEB}"))
+                .expect("web")
+                .web()
+                .expect("web")
+                .production()
+                .is_none()
+        );
+        let source = format!("{VALID}{WEB}{PRODUCTION}");
+        let manifest = ValidatedManifest::parse(&source).expect("production policy");
+        let policy = manifest
+            .web()
+            .expect("web")
+            .production()
+            .expect("production");
+        assert_eq!(policy.origins(), ["https://fixture.example"]);
+        assert_eq!(policy.paths(), ["/", "/ready"]);
+        let baseline = FrozenIdentity::capture(&manifest, b"program", &BTreeMap::new(), None)
+            .expect("baseline identity");
+        let changed = source.replace("/ready", "/health");
+        let changed_manifest = ValidatedManifest::parse(&changed).expect("changed policy");
+        let changed_identity =
+            FrozenIdentity::capture(&changed_manifest, b"program", &BTreeMap::new(), None)
+                .expect("changed identity");
+        assert_ne!(baseline.aggregate_sha256, changed_identity.aggregate_sha256);
+        for invalid in [
+            source.replace("https://fixture.example", "http://fixture.example"),
+            source.replace(
+                "https://fixture.example",
+                "https://user:pass@fixture.example",
+            ),
+            source.replace("https://fixture.example", "https://fixture.example/path"),
+            source.replace("https://fixture.example", "https://fixture.example/"),
+            source.replace("/ready", "../ready"),
+            source.replace("max_redirects = 2", "max_redirects = 6"),
         ] {
             assert!(ValidatedManifest::parse(&invalid).is_err());
         }

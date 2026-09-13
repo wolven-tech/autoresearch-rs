@@ -52,3 +52,12 @@ appear in run-owned JSON. Results are distinct from live AI-engine citations,
 impressions, generated-answer quality, commercial receipts, and original
 product promotion/kill gates. No synthetic citation or generated answer is
 treated as search visibility evidence.
+
+Production probing stays off unless a manifest declares `[web.production]`
+exact HTTPS origins/paths, its authority ceiling permits `network`, and caller
+passes explicit per-run `NetworkReadPermission`. Probe sends only GET or HEAD,
+disables proxies and automatic redirects, then rechecks each redirect against
+same frozen allowlist. No form, deployment, payment, or data mutation is part
+of this adapter. Missing authority or network yields `unavailable`, not a
+passing gate. Response status is observation only. External production URLs
+are never probed by fixture tests.

@@ -5,4 +5,5 @@ pub mod accessibility;
 pub mod browser;
 pub mod geo;
 pub mod lighthouse;
+pub mod production;
 pub mod seo;
