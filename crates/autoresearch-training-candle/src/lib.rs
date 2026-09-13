@@ -7,7 +7,9 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 mod model;
+mod train;
 pub use model::{ModelEvidence, TinyGpt, TinyModelConfig};
+pub use train::{TrainConfig, TrainEvidence, TrainFailure, train_fixed_budget};
 
 const CONTRACT: &[u8] = include_bytes!("../../../fixtures/tiny/contract.json");
 const TRAIN: &[u8] = include_bytes!("../../../fixtures/tiny/train.txt");
