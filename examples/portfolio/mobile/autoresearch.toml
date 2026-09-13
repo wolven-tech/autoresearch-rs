@@ -1,0 +1,41 @@
+schema_version = 1
+
+[experiment]
+name = "local mobile flow and accessibility loop"
+[experiment.objective]
+name = "task_completion_ms"
+direction = "minimize"
+[experiment.budget]
+max_candidates = 2
+max_failures = 1
+wall_clock_seconds = 120
+
+[scope]
+mutable_paths = ["apps/mobile/src"]
+protected_paths = ["autoresearch.toml", "program.md", "docs/BET.md", "docs/mobile-a11y.md", "apps/mobile/tests/golden"]
+
+[agent]
+program = "manual"
+timeout_seconds = 30
+
+[[evaluators]]
+id = "mobile_unit_v1"
+requires_network = false
+hard_gates = ["unit_tests_pass", "local_storage_roundtrip_pass", "offline_mode_pass"]
+[evaluators.command]
+program = "REPLACE_WITH_LOCAL_MOBILE_UNIT_JSONL_ADAPTER"
+args = ["--adapter-version", "1"]
+timeout_seconds = 45
+
+[[evaluators]]
+id = "mobile_integration_v1"
+requires_network = false
+hard_gates = ["integration_tests_pass", "accessibility_labels_pass", "accessibility_touch_targets_pass", "accessibility_focus_order_pass"]
+[evaluators.command]
+program = "REPLACE_WITH_LOCAL_MOBILE_INTEGRATION_JSONL_ADAPTER"
+args = ["--adapter-version", "1"]
+timeout_seconds = 45
+[[evaluators.metrics]]
+name = "task_completion_ms"
+kind = "objective"
+direction = "minimize"

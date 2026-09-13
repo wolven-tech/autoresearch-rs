@@ -1,0 +1,63 @@
+schema_version = 1
+
+[experiment]
+name = "local calculator correctness loop"
+[experiment.objective]
+name = "max_absolute_error"
+direction = "minimize"
+[experiment.budget]
+max_candidates = 2
+max_failures = 1
+wall_clock_seconds = 120
+
+[scope]
+mutable_paths = ["apps/app/src", "crates/calculator/src"]
+protected_paths = ["autoresearch.toml", "program.md", "docs/BET.md", "docs/precision.md", "crates/calculator/tests/golden"]
+
+[agent]
+program = "manual"
+timeout_seconds = 30
+
+[[evaluators]]
+id = "calculator_unit_v1"
+requires_network = false
+hard_gates = ["unit_tests_pass", "golden_numeric_cases_pass", "numeric_tolerance_pass"]
+[evaluators.command]
+program = "REPLACE_WITH_LOCAL_CALCULATOR_UNIT_JSONL_ADAPTER"
+args = ["--adapter-version", "1"]
+timeout_seconds = 45
+[[evaluators.metrics]]
+name = "max_absolute_error"
+kind = "objective"
+direction = "minimize"
+
+[[evaluators]]
+id = "calculator_integration_v1"
+requires_network = false
+hard_gates = ["integration_tests_pass", "invalid_input_rejected", "boundary_cases_pass"]
+[evaluators.command]
+program = "REPLACE_WITH_LOCAL_CALCULATOR_INTEGRATION_JSONL_ADAPTER"
+args = ["--adapter-version", "1"]
+timeout_seconds = 45
+
+[[evaluators]]
+id = "calculator_browser_v1"
+requires_network = false
+hard_gates = ["browser_viewport_exact", "browser_no_overflow", "browser_controls_named", "browser_local_only", "browser_motion_setting", "browser_route_status"]
+[evaluators.command]
+program = "autoresearch-web-evaluator"
+args = ["--route", "calculator", "--manifest", "autoresearch.toml"]
+timeout_seconds = 45
+
+[web]
+origin = "http://127.0.0.1:4402"
+viewports = [320, 390, 768, 1280]
+reduced_motion = true
+[[web.routes]]
+name = "calculator"
+path = "/"
+expected_status = 200
+[web.thresholds]
+max_lcp_ms = 2500
+max_cls_milli = 100
+min_accessibility_score = 90

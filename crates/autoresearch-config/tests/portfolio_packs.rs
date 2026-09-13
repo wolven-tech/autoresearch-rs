@@ -1,6 +1,10 @@
 //! Declarative portfolio templates freeze every relevant local policy input.
 
-use autoresearch_config::{FrozenIdentity, ValidatedManifest};
+use autoresearch_config::{ExternalCapability, FrozenIdentity, ManifestError, ValidatedManifest};
+use autoresearch_core::{
+    Complexity, DecisionReason, Disposition, EvaluationSnapshot, Measurement, MetricDirection,
+    NumericMetricKind, select_candidate,
+};
 use std::collections::BTreeMap;
 
 const UI: &str = include_str!("../../../examples/portfolio/ui/autoresearch.toml");
@@ -10,6 +14,8 @@ const UI_PROGRAM: &str = include_str!("../../../examples/portfolio/ui/program.md
 const PORTFOLIO_README: &str = include_str!("../../../examples/portfolio/README.md");
 const SEO: &str = include_str!("../../../examples/portfolio/seo/autoresearch.toml");
 const GEO: &str = include_str!("../../../examples/portfolio/geo/autoresearch.toml");
+const CALCULATOR: &str = include_str!("../../../examples/portfolio/calculator/autoresearch.toml");
+const MOBILE: &str = include_str!("../../../examples/portfolio/mobile/autoresearch.toml");
 
 #[test]
 fn ui_copy_and_performance_templates_are_bounded_and_local() {
@@ -111,4 +117,100 @@ fn seo_geo_templates_bind_source_policy_and_keep_network_disabled() {
             .source_urls(),
         ["https://example.com/source"]
     );
+}
+
+#[test]
+fn calculator_and_mobile_templates_freeze_tests_accessibility_and_local_authority() {
+    let calculator = ValidatedManifest::parse(CALCULATOR).expect("calculator template");
+    let mobile = ValidatedManifest::parse(MOBILE).expect("mobile template");
+    for manifest in [&calculator, &mobile] {
+        assert!(manifest.experiment().budget().max_candidates <= 2);
+        assert!(manifest.experiment().budget().wall_clock_seconds <= 120);
+        assert!(manifest.authority().allowed().is_empty());
+        assert!(!manifest.authority().permits(ExternalCapability::Network));
+        assert!(manifest.evaluators().iter().all(|e| !e.requires_network()));
+        assert!(
+            manifest
+                .scope()
+                .protected_paths()
+                .iter()
+                .any(|path| path.as_str() == "docs/BET.md")
+        );
+        let gates: Vec<&str> = manifest
+            .evaluators()
+            .iter()
+            .flat_map(|e| e.hard_gates().iter().map(String::as_str))
+            .collect();
+        assert!(gates.iter().any(|gate| gate.contains("unit_tests_pass")));
+        assert!(
+            gates
+                .iter()
+                .any(|gate| gate.contains("integration_tests_pass"))
+        );
+        assert!(
+            manifest
+                .evaluators()
+                .iter()
+                .all(|e| { !["fly", "stripe", "curl", "wget"].contains(&e.command().program()) })
+        );
+    }
+    assert_eq!(calculator.scope().mutable_paths().len(), 2);
+    assert_eq!(
+        calculator
+            .web()
+            .expect("local calculator UI")
+            .routes()
+            .len(),
+        1
+    );
+    assert!(calculator.evaluators().iter().any(|e| {
+        e.hard_gates()
+            .iter()
+            .any(|gate| gate == "browser_controls_named")
+    }));
+    assert_eq!(mobile.scope().mutable_paths().len(), 1);
+    assert!(mobile.web().is_none());
+    assert!(mobile.evaluators().iter().any(|e| {
+        e.hard_gates()
+            .iter()
+            .any(|gate| gate == "accessibility_focus_order_pass")
+    }));
+}
+
+#[test]
+fn calculator_numeric_regression_discards_even_when_all_hard_gates_pass() {
+    let manifest = ValidatedManifest::parse(CALCULATOR).expect("calculator template");
+    assert_eq!(
+        manifest.experiment().objective().name(),
+        "max_absolute_error"
+    );
+    let snapshot = |error: f64| EvaluationSnapshot {
+        measurements: vec![
+            Measurement::hard_gate("unit_tests_pass", true, None).expect("gate"),
+            Measurement::hard_gate("integration_tests_pass", true, None).expect("gate"),
+            Measurement::numeric(
+                "max_absolute_error",
+                NumericMetricKind::Objective,
+                MetricDirection::Minimize,
+                error,
+            )
+            .expect("metric"),
+        ],
+        complexity: Complexity::default(),
+    };
+    let decision =
+        select_candidate(&snapshot(0.01), &snapshot(0.02), "max_absolute_error").expect("decision");
+    assert_eq!(decision.disposition, Disposition::Discard);
+    assert_eq!(decision.reason, DecisionReason::PrimaryRegression);
+}
+
+#[test]
+fn local_only_template_rejects_evaluator_declaring_undeclared_network_need() {
+    for source in [CALCULATOR, MOBILE] {
+        let attempted = source.replacen("requires_network = false", "requires_network = true", 1);
+        assert!(matches!(
+            ValidatedManifest::parse(&attempted),
+            Err(ManifestError::UndeclaredEvaluatorNetwork { .. })
+        ));
+    }
 }

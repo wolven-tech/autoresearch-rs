@@ -73,6 +73,12 @@ pub enum ManifestError {
         /// Frozen objective name.
         name: String,
     },
+    /// Evaluator explicitly needs network, but manifest ceiling omits it.
+    #[error("evaluator `{id}` requires undeclared network authority")]
+    UndeclaredEvaluatorNetwork {
+        /// Evaluator identifier.
+        id: String,
+    },
     /// Product-web target is not a safe local fixture origin or route.
     #[error("invalid web target {field}: {reason}")]
     InvalidWebTarget {
@@ -243,6 +249,8 @@ pub struct Evaluator {
     command: CommandSpec,
     hard_gates: Vec<String>,
     metrics: Vec<MetricDefinition>,
+    #[serde(skip_serializing_if = "is_false")]
+    requires_network: bool,
 }
 
 impl Evaluator {
@@ -262,6 +270,12 @@ impl Evaluator {
     #[must_use]
     pub fn hard_gates(&self) -> &[String] {
         &self.hard_gates
+    }
+
+    /// Whether evaluator declares network need; this is not OS isolation.
+    #[must_use]
+    pub const fn requires_network(&self) -> bool {
+        self.requires_network
     }
 
     /// Returns numeric output definitions.
@@ -716,6 +730,8 @@ struct RawEvaluator {
     id: String,
     command: RawCommand,
     #[serde(default)]
+    requires_network: bool,
+    #[serde(default)]
     hard_gates: Vec<String>,
     #[serde(default)]
     metrics: Vec<RawMetricDefinition>,
@@ -781,7 +797,7 @@ impl RawManifest {
             name: objective_name.clone(),
             direction: self.experiment.objective.direction,
         };
-        let evaluators = validate_evaluators(self.evaluators, &objective)?;
+        let evaluators = validate_evaluators(self.evaluators, &objective, &self.authority)?;
         let web = self.web.map(validate_web_targets).transpose()?;
 
         Ok(ValidatedManifest {
@@ -1173,6 +1189,7 @@ fn validate_command(raw: RawCommand, field: &str) -> Result<CommandSpec, Manifes
 fn validate_evaluators(
     raw_evaluators: Vec<RawEvaluator>,
     objective: &Objective,
+    authority: &AuthorityCeiling,
 ) -> Result<Vec<Evaluator>, ManifestError> {
     let mut evaluator_ids = HashSet::with_capacity(raw_evaluators.len());
     let mut measurement_names = HashSet::new();
@@ -1182,6 +1199,9 @@ fn validate_evaluators(
     for (index, raw) in raw_evaluators.into_iter().enumerate() {
         let id = nonblank(raw.id, &format!("evaluators[{index}].id"))?;
         insert_unique(&mut evaluator_ids, &id, "evaluator")?;
+        if raw.requires_network && !authority.permits(ExternalCapability::Network) {
+            return Err(ManifestError::UndeclaredEvaluatorNetwork { id });
+        }
         let command = validate_command(raw.command, &format!("evaluators[{index}].command"))?;
 
         let mut hard_gates = Vec::with_capacity(raw.hard_gates.len());
@@ -1222,6 +1242,7 @@ fn validate_evaluators(
             command,
             hard_gates,
             metrics,
+            requires_network: raw.requires_network,
         });
     }
 
@@ -1229,6 +1250,12 @@ fn validate_evaluators(
         return Err(ManifestError::MissingObjective(objective.name.clone()));
     }
     Ok(evaluators)
+}
+
+// Serde's skip_serializing_if callback requires a reference argument.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn nonblank(value: String, field: &str) -> Result<String, ManifestError> {
