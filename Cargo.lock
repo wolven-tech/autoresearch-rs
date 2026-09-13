@@ -226,6 +226,10 @@ dependencies = [
 name = "autoresearch-training-candle"
 version = "0.1.0"
 dependencies = [
+ "autoresearch-config",
+ "autoresearch-core",
+ "autoresearch-evaluator",
+ "autoresearch-runner",
  "candle-core",
  "candle-nn",
  "serde",

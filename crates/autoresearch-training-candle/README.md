@@ -47,3 +47,23 @@ shapes, and finite values before changing model state. Stable symlinks and
 future schemas fail closed. Fixture test verifies resumed next-step logits
 exactly and loss within 1e-6 of uninterrupted two-step run. This checkpoint
 does not imply portable optimizer-state parity with upstream AdamW.
+
+`TrainingEvaluator` reads only candidate-worktree `training-config.json` and
+maps `val_bpb` to frozen objective, runtime and token counts to diagnostics,
+and full evidence/checkpoint to run-owned artifacts. Evidence records exact
+baseline/evaluated commit IDs and corpus-contract SHA. Peak memory remains
+`null` in evidence, with explicit unavailable warning; no numeric zero is
+emitted. `autoresearch-training-evaluator` wraps same adapter in Phase 3
+bounded JSONL protocol for Phase 5 runner. Example config:
+
+```json
+{"steps":4,"max_wall_millis":30000,"learning_rate":0.01}
+```
+
+Declare evaluator ID `candle_tiny_training`, hard gate
+`tiny_fixture_verified`, objective `val_bpb` minimized, and diagnostic metrics
+`runtime_millis` minimized plus `training_tokens` and `validation_tokens`
+maximized. Process mode matters for resource failures: crash or OS OOM kill
+becomes a nonzero-exit failure; timeout and cancellation terminate child.
+None yields a comparable objective or passed gate. Native mode is suitable
+only for trusted in-process fixture tests, not resource isolation.
