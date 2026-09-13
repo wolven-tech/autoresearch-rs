@@ -8,6 +8,8 @@ const COPY: &str = include_str!("../../../examples/portfolio/copy/autoresearch.t
 const PERFORMANCE: &str = include_str!("../../../examples/portfolio/performance/autoresearch.toml");
 const UI_PROGRAM: &str = include_str!("../../../examples/portfolio/ui/program.md");
 const PORTFOLIO_README: &str = include_str!("../../../examples/portfolio/README.md");
+const SEO: &str = include_str!("../../../examples/portfolio/seo/autoresearch.toml");
+const GEO: &str = include_str!("../../../examples/portfolio/geo/autoresearch.toml");
 
 #[test]
 fn ui_copy_and_performance_templates_are_bounded_and_local() {
@@ -65,4 +67,48 @@ fn frozen_identity_changes_with_threshold_route_prompt_and_adapter_version() {
     )
     .expect("fixture identity");
     assert_ne!(baseline.aggregate_sha256, changed_fixture.aggregate_sha256);
+}
+
+#[test]
+fn seo_geo_templates_bind_source_policy_and_keep_network_disabled() {
+    let seo = ValidatedManifest::parse(SEO).expect("SEO template");
+    let geo = ValidatedManifest::parse(GEO).expect("GEO template");
+    for manifest in [&seo, &geo] {
+        let web = manifest.web().expect("web policy");
+        let policy = web.seo().expect("technical SEO policy");
+        assert_eq!(policy.robots_path(), "/robots.txt");
+        assert_eq!(policy.sitemap_path(), "/sitemap.xml");
+        let production = web.production().expect("explicit read-only allowlist");
+        assert_eq!(production.origins(), ["https://example.com"]);
+        assert!(manifest.authority().allowed().is_empty());
+        assert!(manifest.experiment().budget().max_candidates <= 2);
+    }
+    assert_eq!(seo.web().expect("web").routes().len(), 1);
+    let geo_web = geo.web().expect("geo web");
+    assert_eq!(geo_web.routes().len(), 2);
+    assert_eq!(
+        geo_web.geo().expect("source policy").source_urls(),
+        Vec::<String>::new()
+    );
+    assert!(
+        ValidatedManifest::parse(&GEO.replace(
+            "source_urls = []",
+            "source_urls = [\"https://synthetic.example.invalid/fake?query=1\"]"
+        ))
+        .is_err()
+    );
+    let declared = GEO.replace(
+        "source_urls = []",
+        "source_urls = [\"https://example.com/source\"]",
+    );
+    let declared_manifest = ValidatedManifest::parse(&declared).expect("exact HTTPS source");
+    assert_eq!(
+        declared_manifest
+            .web()
+            .expect("web")
+            .geo()
+            .expect("geo")
+            .source_urls(),
+        ["https://example.com/source"]
+    );
 }

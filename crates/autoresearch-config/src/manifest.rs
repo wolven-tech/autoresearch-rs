@@ -383,6 +383,7 @@ pub struct GeoSettings {
     entity_name: String,
     facts: BTreeMap<String, String>,
     max_passages: u8,
+    source_urls: Vec<String>,
 }
 
 impl GeoSettings {
@@ -402,6 +403,12 @@ impl GeoSettings {
     #[must_use]
     pub const fn max_passages(&self) -> u8 {
         self.max_passages
+    }
+
+    /// Exact declared HTTPS source links; link presence is not source verification.
+    #[must_use]
+    pub fn source_urls(&self) -> &[String] {
+        &self.source_urls
     }
 }
 
@@ -635,6 +642,8 @@ struct RawGeoSettings {
     entity_name: String,
     facts: BTreeMap<String, String>,
     max_passages: u8,
+    #[serde(default)]
+    source_urls: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -956,6 +965,7 @@ fn validate_geo_settings(raw: RawGeoSettings) -> Result<GeoSettings, ManifestErr
         || raw.facts.is_empty()
         || raw.facts.len() > 16
         || !(1..=32).contains(&raw.max_passages)
+        || raw.source_urls.len() > 16
         || raw.facts.iter().any(|(key, value)| {
             key.is_empty()
                 || key.len() > 40
@@ -971,10 +981,37 @@ fn validate_geo_settings(raw: RawGeoSettings) -> Result<GeoSettings, ManifestErr
             reason: "requires bounded entity, 1–16 keyed facts, and 1–32 passages",
         });
     }
+    let mut source_urls = BTreeSet::new();
+    for source in raw.source_urls {
+        let parsed = Url::parse(&source).map_err(|_| ManifestError::InvalidWebTarget {
+            field: "web.geo.source_urls".into(),
+            reason: "source must be exact HTTPS URL",
+        })?;
+        if parsed.scheme() != "https"
+            || parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+            || parsed.as_str() != source
+        {
+            return Err(ManifestError::InvalidWebTarget {
+                field: "web.geo.source_urls".into(),
+                reason: "source must be canonical HTTPS without credentials, query, or fragment",
+            });
+        }
+        if !source_urls.insert(source) {
+            return Err(ManifestError::InvalidWebTarget {
+                field: "web.geo.source_urls".into(),
+                reason: "duplicate source URL",
+            });
+        }
+    }
     Ok(GeoSettings {
         entity_name,
         facts: raw.facts,
         max_passages: raw.max_passages,
+        source_urls: source_urls.into_iter().collect(),
     })
 }
 

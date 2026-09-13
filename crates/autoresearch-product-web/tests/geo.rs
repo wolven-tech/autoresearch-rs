@@ -21,6 +21,7 @@ enum Scenario {
     EntityConflict,
     Uncited,
     MissingReference,
+    UndeclaredExternal,
     FactConflict,
 }
 
@@ -117,6 +118,8 @@ fn serve(stream: &mut std::net::TcpStream, scenario: Scenario) {
     };
     let source = if matches!(scenario, Scenario::MissingReference) {
         ""
+    } else if matches!(scenario, Scenario::UndeclaredExternal) {
+        "<a id=\"fixture-method\" href=\"https://synthetic.example.invalid/citation\">Invented citation</a>"
     } else {
         "<a id=\"fixture-method\" href=\"/metadata\">Source</a>"
     };
@@ -163,6 +166,7 @@ fn entity_claim_source_and_fact_defects_keep_source_passage_and_rule() {
         (Scenario::EntityConflict, "entity_name_conflict"),
         (Scenario::Uncited, "uncited_claim"),
         (Scenario::MissingReference, "missing_source_reference"),
+        (Scenario::UndeclaredExternal, "missing_source_reference"),
         (Scenario::FactConflict, "product_fact_conflict"),
     ] {
         let fixture = Fixture::new(scenario);

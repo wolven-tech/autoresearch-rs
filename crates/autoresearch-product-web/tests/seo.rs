@@ -19,6 +19,7 @@ const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 enum Scenario {
     Good,
     CanonicalMismatch,
+    MissingCanonical,
     Noindex,
     MissingSitemapUrl,
     MalformedJsonLd,
@@ -122,9 +123,10 @@ fn serve(stream: &mut std::net::TcpStream, port: u16, scenario: Scenario) {
         "/" | "/metadata" => {
             let status = if matches!(scenario, Scenario::BadStatus) { "503 Service Unavailable" } else { "200 OK" };
             let canonical = if matches!(scenario, Scenario::CanonicalMismatch) { format!("{origin}/wrong") } else { format!("{origin}{path}") };
+            let canonical_tag = if matches!(scenario, Scenario::MissingCanonical) { String::new() } else { format!("<link rel=\"canonical\" href=\"{canonical}\">") };
             let robots = if matches!(scenario, Scenario::Noindex) { "noindex" } else { "index, follow" };
             let json_ld = if matches!(scenario, Scenario::MalformedJsonLd) { "{invalid" } else { "{\"@type\":\"WebPage\"}" };
-            (status, "", format!("<!doctype html><html lang=\"en\"><head><title>SEO fixture</title><link rel=\"canonical\" href=\"{canonical}\"><meta name=\"robots\" content=\"{robots}\"><script type=\"application/ld+json\">{json_ld}</script></head><body><h1>SEO fixture</h1></body></html>"))
+            (status, "", format!("<!doctype html><html lang=\"en\"><head><title>SEO fixture</title>{canonical_tag}<meta name=\"robots\" content=\"{robots}\"><script type=\"application/ld+json\">{json_ld}</script></head><body><h1>SEO fixture</h1></body></html>"))
         }
         _ => ("404 Not Found", "", String::new()),
     };
@@ -161,6 +163,7 @@ fn declared_good_route_records_source_artifact_without_ranking_claim() {
 fn fixture_rules_detect_canonical_noindex_sitemap_jsonld_and_status() {
     for (scenario, rule) in [
         (Scenario::CanonicalMismatch, "canonical_mismatch"),
+        (Scenario::MissingCanonical, "canonical_mismatch"),
         (Scenario::Noindex, "unexpected_noindex"),
         (Scenario::MissingSitemapUrl, "sitemap_url_missing"),
         (Scenario::MalformedJsonLd, "malformed_json_ld"),

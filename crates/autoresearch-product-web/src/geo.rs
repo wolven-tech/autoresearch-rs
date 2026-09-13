@@ -282,7 +282,9 @@ fn inspect_passages(
                 .filter(|value| !value.trim().is_empty())
             {
                 None => add_issue(evidence, "uncited_claim", &id, &claim_excerpt),
-                Some(source_ref) if !valid_source_ref(passage, &link_selector, web, source_ref) => {
+                Some(source_ref)
+                    if !valid_source_ref(passage, &link_selector, web, policy, source_ref) =>
+                {
                     add_issue(evidence, "missing_source_reference", &id, &claim_excerpt);
                 }
                 Some(_) => {}
@@ -296,6 +298,7 @@ fn valid_source_ref(
     passage: ElementRef<'_>,
     selector: &Selector,
     web: &WebTargets,
+    policy: &GeoSettings,
     source_ref: &str,
 ) -> bool {
     passage.select(selector).any(|link| {
@@ -311,7 +314,7 @@ fn valid_source_ref(
         if href.starts_with('/') {
             return web.routes().iter().any(|route| route.path() == href);
         }
-        Url::parse(href).is_ok_and(|url| url.scheme() == "https" && url.host_str().is_some())
+        policy.source_urls().iter().any(|source| source == href)
     })
 }
 

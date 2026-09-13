@@ -1,0 +1,69 @@
+schema_version = 1
+
+[experiment]
+name = "local source-grounded GEO loop"
+[experiment.objective]
+name = "unsupported_claim_count"
+direction = "minimize"
+[experiment.budget]
+max_candidates = 2
+max_failures = 1
+wall_clock_seconds = 120
+
+[scope]
+mutable_paths = ["apps/web/content", "apps/web/src/pages"]
+protected_paths = ["autoresearch.toml", "program.md", "docs/BET.md", "docs/claims.md"]
+
+[agent]
+program = "manual"
+timeout_seconds = 30
+
+[[evaluators]]
+id = "geo_browser_v1"
+hard_gates = ["browser_viewport_exact", "browser_no_overflow", "browser_controls_named", "browser_local_only", "browser_motion_setting", "browser_route_status"]
+[evaluators.command]
+program = "autoresearch-web-evaluator"
+args = ["--route", "home", "--manifest", "autoresearch.toml"]
+timeout_seconds = 45
+
+[[evaluators]]
+id = "geo_source_v1"
+hard_gates = ["entity_consistent", "declared_sources_only", "product_facts_match"]
+[evaluators.command]
+program = "REPLACE_WITH_LOCAL_GEO_JSONL_EVALUATOR"
+args = ["--adapter-version", "1"]
+timeout_seconds = 45
+[[evaluators.metrics]]
+name = "unsupported_claim_count"
+kind = "objective"
+direction = "minimize"
+
+[web]
+origin = "http://127.0.0.1:4402"
+viewports = [320, 390, 768, 1280]
+reduced_motion = true
+[[web.routes]]
+name = "home"
+path = "/"
+expected_status = 200
+[[web.routes]]
+name = "method"
+path = "/method"
+expected_status = 200
+[web.thresholds]
+max_lcp_ms = 2500
+max_cls_milli = 100
+min_accessibility_score = 90
+[web.seo]
+sitemap_path = "/sitemap.xml"
+robots_path = "/robots.txt"
+max_redirects = 2
+[web.geo]
+entity_name = "Example Product"
+facts = { operation = "Local-only source inspection", evidence = "Lab diagnostics, not market receipts" }
+max_passages = 16
+source_urls = []
+[web.production]
+origins = ["https://example.com"]
+paths = ["/", "/method"]
+max_redirects = 2
