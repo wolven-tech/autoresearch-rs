@@ -1,10 +1,14 @@
 //! Versioned deterministic reports from replayed run evidence. Market receipts
 //! stay separate from internal code-selection measurements.
 
+mod board;
+
+pub use board::{BoardError, render_board};
+
 use autoresearch_core::{
-    CandidateDecision, CandidateFinalization, DecisionError, EvaluationSnapshot, JournalError,
-    JournalEvent, Measurement, MetricDirection, NumericMetricKind, RecoveryAction, ReplayState,
-    RepoPath, replay_journal, select_candidate,
+    CandidateDecision, CandidateFinalization, DecisionError, EvaluationSnapshot, EvaluatorFailure,
+    JournalError, JournalEvent, Measurement, MetricDirection, NumericMetricKind, RecoveryAction,
+    ReplayState, RepoPath, replay_journal, select_candidate,
 };
 use autoresearch_evaluator::EvaluatorOutput;
 use autoresearch_market::MarketEvidenceLedger;
@@ -33,6 +37,8 @@ pub struct RunReportV1 {
     pub recovery_action: String,
     /// Typed baseline snapshot, if evaluator completed.
     pub baseline: Option<BaselineEvidence>,
+    /// Typed baseline crash, if baseline never became comparable.
+    pub baseline_failure: Option<FailureSummary>,
     /// Current best typed snapshot, never market-derived.
     pub current_best_snapshot: Option<EvaluationSnapshot>,
     /// Ordered exact candidate timeline.
@@ -103,8 +109,19 @@ pub struct CandidateEvidence {
     pub finalization: Option<CandidateFinalization>,
     /// Validated run-owned artifact references from evaluator envelopes.
     pub artifacts: Vec<ArtifactReference>,
+    /// Failed evaluator attempts, never counted as measured results.
+    pub failures: Vec<FailureSummary>,
     /// Prepared, decided, kept, or discarded.
     pub state: String,
+}
+
+/// Journaled redacted evaluator failure with exact adapter identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FailureSummary {
+    /// Frozen evaluator ID.
+    pub evaluator_id: String,
+    /// Typed failure; process output remains withheld by runner.
+    pub failure: EvaluatorFailure,
 }
 
 /// Baseline or prior-best gate versus candidate gate.
@@ -207,6 +224,12 @@ pub fn build_report(
         },
         recovery_action: action_name(view.recovery_action()).into(),
         baseline,
+        baseline_failure: view
+            .baseline_failure()
+            .map(|(evaluator_id, failure)| FailureSummary {
+                evaluator_id: evaluator_id.clone(),
+                failure: failure.clone(),
+            }),
         current_best_snapshot,
         candidates,
         stop_reason: view.stop_reason().map(str::to_owned),
@@ -278,20 +301,23 @@ fn build_timeline(
                 ..
             } => {
                 prior_best.clone_from(&current_best);
-                candidates.push(CandidateEvidence {
-                    index: *index,
-                    parent_commit: parent_commit.clone(),
-                    candidate_commit: None,
-                    changed_paths: Vec::new(),
-                    changed_paths_status: "not_yet_recorded".into(),
-                    hard_gates: gate_matrix(prior_best.as_ref(), None),
-                    objective_delta: None,
-                    runtime_ms: None,
-                    snapshot: None,
-                    decision: None,
-                    finalization: None,
-                    artifacts: Vec::new(),
-                    state: "prepared".into(),
+                candidates.push(prepared_candidate(
+                    *index,
+                    parent_commit,
+                    prior_best.as_ref(),
+                ));
+            }
+            JournalEvent::CandidateEvaluatorFailed {
+                evaluator_id,
+                failure,
+                ..
+            } => {
+                let candidate = candidates.last_mut().ok_or(ReportError::InvalidSource(
+                    "failed evaluator has no prepared candidate",
+                ))?;
+                candidate.failures.push(FailureSummary {
+                    evaluator_id: evaluator_id.clone(),
+                    failure: failure.clone(),
                 });
             }
             JournalEvent::CandidateEvaluatorCaptured {
@@ -356,6 +382,29 @@ fn build_timeline(
         }
     }
     Ok((candidates, current_best))
+}
+
+fn prepared_candidate(
+    index: u32,
+    parent_commit: &str,
+    prior_best: Option<&EvaluationSnapshot>,
+) -> CandidateEvidence {
+    CandidateEvidence {
+        index,
+        parent_commit: parent_commit.into(),
+        candidate_commit: None,
+        changed_paths: Vec::new(),
+        changed_paths_status: "not_yet_recorded".into(),
+        hard_gates: gate_matrix(prior_best, None),
+        objective_delta: None,
+        runtime_ms: None,
+        snapshot: None,
+        decision: None,
+        finalization: None,
+        artifacts: Vec::new(),
+        failures: Vec::new(),
+        state: "prepared".into(),
+    }
 }
 
 fn validate_candidate_decision(

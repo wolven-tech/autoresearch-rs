@@ -9,7 +9,7 @@ use autoresearch_core::{
 };
 use autoresearch_evaluator::CancellationToken;
 use autoresearch_market::{ImportError, MarketEvidenceLedger, import_receipts};
-use autoresearch_report::{ReportError, RunReportV1, build_report};
+use autoresearch_report::{BoardError, ReportError, RunReportV1, build_report, render_board};
 use autoresearch_runner::{
     BaselineCapture, ResumeOutcome, RunMutationMode, RunStatus, RunStep, RunnerError,
     SubprocessBaselineExecutor, VerificationEvidence, advance_run_once, capture_existing_baseline,
@@ -92,6 +92,9 @@ enum Action {
         /// Relative receipt sidecar under evidence root. Repeat to import more.
         #[arg(long)]
         receipt: Vec<PathBuf>,
+        /// Emit standalone HTML to stdout instead of JSON report.
+        #[arg(long)]
+        html: bool,
     },
     /// Rerun frozen evaluators at finalized kept commit, without reselection.
     Verify {
@@ -132,6 +135,8 @@ pub enum CommandReport {
     Status(RunStatus),
     /// Deterministic versioned report; receipts stay outside evaluator fields.
     Report(Box<RunReportV1>),
+    /// Standalone script-free evidence board.
+    BoardHtml(String),
     /// Independent kept-commit verification evidence.
     Verify(VerificationEvidence),
     /// Operator cancellation at stable boundary.
@@ -346,6 +351,12 @@ pub enum AppError {
     /// Report replay or serialization rejected run evidence.
     #[error(transparent)]
     Report(#[from] ReportError),
+    /// HTML board refused unsafe artifact reference.
+    #[error(transparent)]
+    Board(#[from] BoardError),
+    /// HTML document and JSON output are mutually exclusive.
+    #[error("--html cannot be combined with --json")]
+    IncompatibleOutputFormat,
 }
 
 impl AppError {
@@ -355,7 +366,8 @@ impl AppError {
             | Self::Identity(_)
             | Self::MissingExecutableAuthority
             | Self::UnexpectedExecutableAuthority
-            | Self::MissingEvidenceRoot => EXIT_CONFIG,
+            | Self::MissingEvidenceRoot
+            | Self::IncompatibleOutputFormat => EXIT_CONFIG,
             Self::Runner(RunnerError::CandidateEvaluator { .. }) => EXIT_FAILURE,
             Self::Git(_)
             | Self::BlankProgram
@@ -364,7 +376,8 @@ impl AppError {
             | Self::Runner(_)
             | Self::BaselineExecution { .. }
             | Self::Market(_)
-            | Self::Report(_) => EXIT_ENVIRONMENT,
+            | Self::Report(_)
+            | Self::Board(_) => EXIT_ENVIRONMENT,
             Self::Io { .. } | Self::Json(_) | Self::ClockBeforeEpoch | Self::RunIdCollision => {
                 EXIT_FAILURE
             }
@@ -430,7 +443,11 @@ pub fn execute(cli: &Cli) -> Result<Execution, AppError> {
             run_id,
             evidence_root,
             receipt,
+            html,
         } => {
+            if *html && cli.json {
+                return Err(AppError::IncompatibleOutputFormat);
+            }
             let source = load_report_source(&cli.repository, run_id)?;
             let market = if receipt.is_empty() {
                 MarketEvidenceLedger {
@@ -442,7 +459,16 @@ pub fn execute(cli: &Cli) -> Result<Execution, AppError> {
                     .ok_or(AppError::MissingEvidenceRoot)?;
                 import_receipts(root, receipt)?
             };
-            CommandReport::Report(Box::new(build_report(&source, market)?))
+            let report = build_report(&source, market)?;
+            if *html {
+                let html = render_board(&report, &source.run_directory)?;
+                CommandReport::BoardHtml(
+                    String::from_utf8(html)
+                        .map_err(|_| AppError::Git("board renderer emitted non-UTF-8".into()))?,
+                )
+            } else {
+                CommandReport::Report(Box::new(report))
+            }
         }
         Action::Verify { run_id } => CommandReport::Verify(verify_kept_commit(
             &cli.repository,
@@ -831,6 +857,10 @@ fn command_failure(output: &Output) -> String {
 }
 
 fn render(report: &CommandReport, json: bool) -> Result<(), AppError> {
+    if let CommandReport::BoardHtml(html) = report {
+        print!("{html}");
+        return Ok(());
+    }
     if json {
         println!("{}", serde_json::to_string_pretty(report)?);
         return Ok(());
@@ -904,6 +934,7 @@ fn render(report: &CommandReport, json: bool) -> Result<(), AppError> {
         CommandReport::Report(report) => {
             println!("{}", serde_json::to_string_pretty(report)?);
         }
+        CommandReport::BoardHtml(_) => unreachable!("HTML rendered before text match"),
         CommandReport::Verify(report) => {
             println!("run: {}", report.run_id);
             println!("verified commit: {}", report.verified_commit);

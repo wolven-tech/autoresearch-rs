@@ -9,7 +9,8 @@
 > explicit-authority read-only HTTPS probe. CLI ships `init`, `doctor`,
 > exact-commit `baseline`, one-candidate-at-a-time `run`, journal `resume`,
 > read-only `status`, independent kept-commit `verify`, and stable-boundary
-> `stop`. Standalone report and broad autonomous orchestration remain
+> `stop`. Versioned journal-backed JSON report and standalone offline HTML
+> board now ship; redacted export and broad autonomous orchestration remain
 > unfinished. Original Python implementation remains below and runnable
 > unchanged.
 
@@ -29,6 +30,8 @@ cargo run -p autoresearch-cli -- --repository /path/to/repository run --run-id R
 cargo run -p autoresearch-cli -- --repository /path/to/repository status --run-id RUN_ID
 cargo run -p autoresearch-cli -- --repository /path/to/repository resume --run-id RUN_ID
 cargo run -p autoresearch-cli -- --repository /path/to/repository verify --run-id RUN_ID
+cargo run -p autoresearch-cli -- --repository /path/to/repository report --run-id RUN_ID
+cargo run -p autoresearch-cli -- --repository /path/to/repository report --run-id RUN_ID --html
 ```
 
 `init` never overwrites existing contract files. `doctor` is read-only and does
@@ -48,6 +51,10 @@ frozen evaluators in an isolated worktree, and writes a separate verification
 record containing original selection and fresh evidence. It does not reselect
 or move retained ref. `stop` records operator cancellation only between
 candidates; active candidate needs inspection or completion first.
+`report` rebuilds versioned JSON from validated frozen source and journal;
+`--html` emits a script-free evidence board to stdout. See
+[`docs/evidence-board.md`](docs/evidence-board.md) for provenance and
+accessibility limits.
 
 Architecture and safety decisions: [`docs/plans/2026-09-11-autoresearch-rust-platform-design.md`](docs/plans/2026-09-11-autoresearch-rust-platform-design.md).
 

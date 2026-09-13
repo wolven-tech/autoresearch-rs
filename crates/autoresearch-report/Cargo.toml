@@ -19,6 +19,8 @@ thiserror.workspace = true
 
 [dev-dependencies]
 autoresearch-config = { path = "../autoresearch-config" }
+headless_chrome = { version = "1.0.21", default-features = false, features = ["offline"] }
+url = "2.5.7"
 
 [lints]
 workspace = true

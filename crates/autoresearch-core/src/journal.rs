@@ -65,6 +65,18 @@ pub enum JournalEvent {
         /// Bounded complete evaluator output envelope.
         output_json: String,
     },
+    /// Records failed evaluator attempt without fabricating a snapshot or
+    /// changing next recovery action; later resume may retry exact candidate.
+    CandidateEvaluatorFailed {
+        /// Active one-based candidate number.
+        index: u32,
+        /// Frozen evaluator ID.
+        evaluator_id: String,
+        /// Exact candidate commit attempted.
+        evaluated_commit: String,
+        /// Typed bounded failure summary.
+        failure: EvaluatorFailure,
+    },
     /// Stores evaluation and selection before Git finalization.
     CandidateDecisionRecorded {
         /// Candidate number matching preparation record.
@@ -438,6 +450,12 @@ impl Machine {
                 evaluated_commit,
                 output_json,
             } => self.capture_evaluator(*index, evaluator_id, evaluated_commit, output_json),
+            JournalEvent::CandidateEvaluatorFailed {
+                index,
+                evaluator_id,
+                evaluated_commit,
+                failure,
+            } => self.fail_evaluator(*index, evaluator_id, evaluated_commit, failure),
             JournalEvent::CandidateDecisionRecorded {
                 index,
                 candidate_commit,
@@ -568,6 +586,37 @@ impl Machine {
         }
         if !self.completed_evaluators.insert(evaluator_id.into()) {
             return Err(JournalError::DuplicateEvaluator(evaluator_id.into()));
+        }
+        self.evaluator_commit = Some(evaluated_commit.into());
+        Ok(())
+    }
+
+    fn fail_evaluator(
+        &mut self,
+        index: u32,
+        evaluator_id: &str,
+        evaluated_commit: &str,
+        failure: &EvaluatorFailure,
+    ) -> Result<(), JournalError> {
+        let Some(CandidateStage::Prepared { index: active, .. }) = &self.active else {
+            return Err(self.invalid("candidate_evaluator_failed"));
+        };
+        if index != *active {
+            return Err(JournalError::CandidateIndex {
+                expected: *active,
+                actual: index,
+            });
+        }
+        checked(evaluator_id, "evaluator_id")?;
+        checked(evaluated_commit, "evaluated_commit")?;
+        checked(&failure.detail, "candidate_failure_detail")?;
+        if self
+            .evaluator_commit
+            .as_ref()
+            .is_some_and(|commit| commit != evaluated_commit)
+            || self.completed_evaluators.contains(evaluator_id)
+        {
+            return Err(JournalError::EvaluatorCommitMismatch);
         }
         self.evaluator_commit = Some(evaluated_commit.into());
         Ok(())
@@ -763,6 +812,7 @@ const fn event_name(event: &JournalEvent) -> &'static str {
         JournalEvent::BaselineFailed { .. } => "baseline_failed",
         JournalEvent::CandidatePrepared { .. } => "candidate_prepared",
         JournalEvent::CandidateEvaluatorCaptured { .. } => "candidate_evaluator_captured",
+        JournalEvent::CandidateEvaluatorFailed { .. } => "candidate_evaluator_failed",
         JournalEvent::CandidateDecisionRecorded { .. } => "candidate_decision_recorded",
         JournalEvent::CandidateFinalized { .. } => "candidate_finalized",
         JournalEvent::RunStopped { .. } => "run_stopped",

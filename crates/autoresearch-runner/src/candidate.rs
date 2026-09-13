@@ -104,9 +104,16 @@ pub fn evaluate_committed_candidate(
                 outputs.push(output);
             }
             Err(failure) => {
+                let failure = redact_failure(&failure);
+                stored.append(JournalEvent::CandidateEvaluatorFailed {
+                    index,
+                    evaluator_id: evaluator.id().into(),
+                    evaluated_commit: committed.commit_id().to_string(),
+                    failure: failure.clone(),
+                })?;
                 return Err(RunnerError::CandidateEvaluator {
                     evaluator_id: evaluator.id().into(),
-                    failure: redact_failure(&failure),
+                    failure,
                 });
             }
         }

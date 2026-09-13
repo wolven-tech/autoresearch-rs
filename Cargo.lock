@@ -184,9 +184,11 @@ dependencies = [
  "autoresearch-evaluator",
  "autoresearch-market",
  "autoresearch-runner",
+ "headless_chrome",
  "serde",
  "serde_json",
  "thiserror",
+ "url",
 ]
 
 [[package]]

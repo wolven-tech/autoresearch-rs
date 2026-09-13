@@ -42,6 +42,7 @@
     },
     "artifact_references_status": "not_recorded_in_baseline_journal"
   },
+  "baseline_failure": null,
   "current_best_snapshot": {
     "measurements": [
       {
@@ -119,6 +120,7 @@
         "commit": "improved"
       },
       "artifacts": [],
+      "failures": [],
       "state": "kept"
     }
   ],

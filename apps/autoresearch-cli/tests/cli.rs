@@ -232,6 +232,17 @@ fn report_replays_frozen_baseline_without_mutating_repository() {
         fs::read(run_dir.join("journal.jsonl")).expect("journal after"),
         journal_before
     );
+    let board = run_cli(&repository.0, &["report", "--run-id", run_id, "--html"]);
+    assert_success(&board);
+    let board = String::from_utf8(board.stdout).expect("HTML UTF-8");
+    assert!(board.starts_with("<!doctype html>"));
+    assert!(board.contains("id=\"candidates\""));
+    assert!(!board.contains("<script"));
+    let mixed = run_cli(
+        &repository.0,
+        &["--json", "report", "--run-id", run_id, "--html"],
+    );
+    assert_eq!(mixed.status.code(), Some(3));
     assert_eq!(git_text(&repository.0, &["status", "--porcelain=v1"]), "");
 }
 

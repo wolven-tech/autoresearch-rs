@@ -440,7 +440,11 @@ fn mismatched_commit_and_evaluator_failure_never_advance_ref() {
         ),
         Err(RunnerError::CandidateEvaluator { .. })
     ));
-    assert_eq!(fixture.journal().len(), 3);
+    assert_eq!(fixture.journal().len(), 4);
+    assert!(matches!(
+        fixture.journal()[3].event,
+        JournalEvent::CandidateEvaluatorFailed { .. }
+    ));
     assert_eq!(
         git_text(
             &fixture.root,
