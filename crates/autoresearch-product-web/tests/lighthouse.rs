@@ -33,11 +33,8 @@ impl Fixture {
         let artifacts = root.join(".autoresearch/runs/run-1/artifacts");
         fs::create_dir_all(&candidate).expect("candidate");
         fs::create_dir_all(artifacts.join("lighthouse")).expect("artifacts");
-        let source = format!(
-            "{}\n[web.lighthouse]\nversion = \"fixture-lighthouse-v1\"\nenvironment_fingerprint = \"{FINGERPRINT}\"\nwarmup_samples = 1\nmeasured_samples = 3\nfields = [\"performance\", \"accessibility\", \"best_practices\", \"seo\", \"fcp_ms\", \"lcp_ms\", \"cls\", \"tbt_ms\"]\n",
-            include_str!("../../../examples/product-web/autoresearch.toml")
-        );
-        let manifest = ValidatedManifest::parse(&source).expect("Lighthouse manifest");
+        let source = include_str!("../../../examples/product-web/autoresearch.toml");
+        let manifest = ValidatedManifest::parse(source).expect("Lighthouse manifest");
         let context = EvaluationContext::new(EvaluationContextSpec {
             run_id: "run-1".into(),
             baseline_commit: COMMIT.into(),

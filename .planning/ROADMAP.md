@@ -9,7 +9,7 @@ Build safe experiment substrate first, then Git isolation, evaluators, product a
 - [x] **Phase 1: Foundation** - Workspace, typed decisions, frozen config, journal, and CLI shell.
 - [x] **Phase 2: Git Loop** - Isolated worktrees, protected paths, branches, locks, and recovery. (completed 2026-09-12)
 - [x] **Phase 3: Evaluator SDK** - Native traits, JSONL protocol, command, Cargo, and diff adapters. (completed 2026-09-13)
-- [ ] **Phase 4: Product Web** - Browser, Lighthouse, accessibility, SEO/GEO adapters and fixture.
+- [x] **Phase 4: Product Web** - Browser, Lighthouse, accessibility, SEO/GEO adapters and fixture.
 - [ ] **Phase 5: Agents and Evidence** - Mutation commands, static report, redaction, and export.
 - [ ] **Phase 6: Candle and Portfolio** - Candle backend, Python parity, and reusable portfolio packs.
 
@@ -50,7 +50,16 @@ evidence, and local examples are complete. Phase 4 Product Web remains next;
 ### Phase 4: Product Web
 **Goal**: Measure browser, accessibility, performance, SEO, GEO, and production properties without moving product gates.
 **Depends on**: Phase 3
-**Plans**: TBD
+**Plans**: 9 tracked stories; complete 2026-09-13
+
+Local Chromium route, responsive, reduced-motion, bounded accessibility,
+technical SEO, and annotated-source GEO evidence are implemented. Lighthouse
+report import validates frozen version/fingerprint/fields and sampling; named
+offline pack uses synthetic reports only to exercise import. Optional
+read-only HTTPS production probe remains disabled without frozen allowlist,
+manifest network ceiling, and per-run permission. Phase 3 validators accept
+the combined offline artifact pack. These lab checks cannot establish market
+evidence, WCAG AA conformance, live ranking, or AI citations.
 
 ### Phase 5: Agents and Evidence
 **Goal**: Drive provider-neutral mutations and produce auditable static reports and redacted bundles.
@@ -69,6 +78,6 @@ evidence, and local examples are complete. Phase 4 Product Web remains next;
 | 1. Foundation | 4/4 | Complete | 2026-09-11 |
 | 2. Git Loop | 4/4 | Complete | 2026-09-12 |
 | 3. Evaluator SDK | 8/8 | Complete | 2026-09-13 |
-| 4. Product Web | 0/TBD | Not started | - |
+| 4. Product Web | 9/9 | Complete | 2026-09-13 |
 | 5. Agents and Evidence | 0/TBD | Not started | - |
 | 6. Candle and Portfolio | 0/TBD | Not started | - |

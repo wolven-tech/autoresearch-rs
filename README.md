@@ -4,9 +4,11 @@
 > deterministic candidate policy, frozen input identities, crash-recovery
 > journal model, Git candidate-worktree lifecycle, and evaluator SDK (native
 > contract, JSONL v1 subprocess protocol, command/Cargo gates, exact-commit
-> diff evidence). CLI ships `init`, `doctor`, and baseline freeze. Automated
-> `run`/`resume`, browser/Lighthouse adapters, mutation orchestration, and
-> reporting are not shipped; baseline output still reports evaluator evidence
+> diff evidence). Product-web crate adds local browser and bounded accessibility
+> checks, frozen Lighthouse report import, local SEO/GEO diagnostics, and an
+> explicit-authority read-only HTTPS probe. CLI ships `init`, `doctor`, and
+> baseline freeze; automated `run`/`resume`, mutation orchestration, and
+> reporting are not shipped. Baseline output still reports evaluator evidence
 > as pending. Original Python implementation remains below and runnable
 > unchanged.
 
@@ -32,6 +34,12 @@ Evaluator SDK contract and runnable examples:
 [`docs/evaluator-protocol.md`](docs/evaluator-protocol.md) and
 [`docs/evaluator-examples.md`](docs/evaluator-examples.md). These examples show
 one invocation only; they are not an automated product experiment.
+
+Offline product-web pack and limits:
+[`examples/product-web/README.md`](examples/product-web/README.md). Its
+Lighthouse samples are synthetic import fixtures, not live performance data;
+SEO/GEO output and accessibility samples cannot prove ranking, AI citations,
+WCAG AA conformance, customer demand, or a product bet gate.
 
 ## Original upstream implementation
 

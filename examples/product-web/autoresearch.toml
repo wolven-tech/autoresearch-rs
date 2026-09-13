@@ -69,3 +69,10 @@ max_redirects = 2
 entity_name = "Product-web fixture"
 facts = { operation = "Local-only checks", evidence = "Lab evidence, not market receipts" }
 max_passages = 16
+
+[web.lighthouse]
+version = "fixture-lighthouse-v1"
+environment_fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+warmup_samples = 1
+measured_samples = 3
+fields = ["performance", "accessibility", "best_practices", "seo", "fcp_ms", "lcp_ms", "cls", "tbt_ms"]
