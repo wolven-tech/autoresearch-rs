@@ -4,13 +4,13 @@ use autoresearch_config::{
     Evaluator, FrozenIdentity, IdentityError, ManifestError, ValidatedManifest,
 };
 use autoresearch_core::{
-    Complexity, EvaluationSnapshot, EvaluatorFailure, FailureClass, JournalEntry, JournalError,
-    JournalEvent, RecoveryAction, ReplayState, RepoPath, RepositoryInspector, RunId,
-    replay_journal,
+    Complexity, DecisionError, EvaluationSnapshot, EvaluatorFailure, FailureClass, JournalEntry,
+    JournalError, JournalEvent, RecoveryAction, ReplayState, RepoPath, RepositoryInspector, RunId,
+    RunView, replay_journal,
 };
 use autoresearch_evaluator::{
     CancellationToken, ContextError, EvaluationContext, EvaluationContextSpec, ProcessLimitError,
-    ProcessLimits, ValidatedOutput, build_snapshot, evaluate_subprocess,
+    ProcessLimits, ValidatedOutput, ValidationError, build_snapshot, evaluate_subprocess,
 };
 use autoresearch_git::{GitError, GitRepository, LockedGitRepository, RunLockGuard};
 use std::collections::BTreeMap;
@@ -41,6 +41,20 @@ pub enum RunnerError {
     /// Journal history is invalid.
     #[error(transparent)]
     Journal(#[from] JournalError),
+    /// Frozen lexicographic policy cannot compare snapshots.
+    #[error(transparent)]
+    Decision(#[from] DecisionError),
+    /// Evaluator outputs cannot form complete frozen snapshot.
+    #[error(transparent)]
+    Validation(#[from] ValidationError),
+    /// Candidate evaluator failed without a comparable score.
+    #[error("candidate evaluator {evaluator_id} failed: {failure:?}")]
+    CandidateEvaluator {
+        /// Frozen evaluator ID.
+        evaluator_id: String,
+        /// Redacted typed failure.
+        failure: EvaluatorFailure,
+    },
     /// Stored JSON cannot be parsed or written.
     #[error(transparent)]
     Json(#[from] serde_json::Error),
@@ -151,7 +165,12 @@ pub fn capture_existing_baseline(
     executor: &impl BaselineExecutor,
     declared_environment: BTreeMap<String, String>,
 ) -> Result<BaselineCapture, RunnerError> {
-    let stored = StoredRun::load(repository, run_id)?;
+    let mut stored = StoredRun::load(repository, run_id)?;
+    if stored.view.recovery_action() != &RecoveryAction::CaptureBaseline {
+        return Err(RunnerError::InvalidState(
+            "run is not awaiting baseline evaluation",
+        ));
+    }
     let snapshot = GitRepository.inspect(&stored.root, &stored.base_commit)?;
     let lock = RunLockGuard::acquire(&snapshot, run_id)?;
     let git = LockedGitRepository::new(&snapshot, &lock)?;
@@ -175,7 +194,8 @@ pub fn capture_existing_baseline(
         cancellation_id: format!("{run_id}-baseline"),
     })?;
     let mut outputs = Vec::with_capacity(stored.manifest.evaluators().len());
-    for evaluator in stored.manifest.evaluators() {
+    let evaluators = stored.manifest.evaluators().to_vec();
+    for evaluator in &evaluators {
         let result = executor.evaluate(&context, evaluator);
         if git.prepare_baseline(&run).is_err() {
             return stored.fail(
@@ -210,23 +230,24 @@ pub fn capture_existing_baseline(
     })
 }
 
-fn redact_failure(failure: &EvaluatorFailure) -> EvaluatorFailure {
+pub(crate) fn redact_failure(failure: &EvaluatorFailure) -> EvaluatorFailure {
     EvaluatorFailure {
         class: failure.class,
         detail: "declared evaluator failed; raw process output withheld".into(),
     }
 }
 
-struct StoredRun {
-    root: PathBuf,
-    run_directory: PathBuf,
-    manifest: ValidatedManifest,
-    base_commit: String,
-    entries: Vec<JournalEntry>,
+pub(crate) struct StoredRun {
+    pub(crate) root: PathBuf,
+    pub(crate) run_directory: PathBuf,
+    pub(crate) manifest: ValidatedManifest,
+    pub(crate) base_commit: String,
+    pub(crate) entries: Vec<JournalEntry>,
+    pub(crate) view: RunView,
 }
 
 impl StoredRun {
-    fn load(repository: &Path, run_id: &str) -> Result<Self, RunnerError> {
+    pub(crate) fn load(repository: &Path, run_id: &str) -> Result<Self, RunnerError> {
         RunId::new(run_id.to_owned()).map_err(|_| RunnerError::InvalidRunId)?;
         let initial = GitRepository.inspect(repository, "HEAD")?;
         let root = initial.root().to_path_buf();
@@ -255,10 +276,8 @@ impl StoredRun {
         let ReplayState::Run(view) = replay_journal(&entries)? else {
             return Err(RunnerError::InvalidState("run journal is empty"));
         };
-        if view.run_id() != run_id || view.recovery_action() != &RecoveryAction::CaptureBaseline {
-            return Err(RunnerError::InvalidState(
-                "run is not awaiting baseline evaluation",
-            ));
+        if view.run_id() != run_id {
+            return Err(RunnerError::InvalidState("run ID differs from journal"));
         }
         let frozen = run_directory.join("frozen");
         let manifest_source = read_regular(&frozen.join("autoresearch.toml"), MAX_FROZEN_BYTES)?;
@@ -310,11 +329,12 @@ impl StoredRun {
             manifest,
             base_commit: view.base_commit().into(),
             entries,
+            view: *view,
         })
     }
 
     fn fail(
-        &self,
+        &mut self,
         evaluator_id: &str,
         failure: EvaluatorFailure,
     ) -> Result<BaselineCapture, RunnerError> {
@@ -329,7 +349,7 @@ impl StoredRun {
         })
     }
 
-    fn append(&self, event: JournalEvent) -> Result<(), RunnerError> {
+    pub(crate) fn append(&mut self, event: JournalEvent) -> Result<(), RunnerError> {
         let sequence = u64::try_from(self.entries.len())
             .map_err(|_| RunnerError::InvalidState("journal sequence overflow"))?;
         let entry = JournalEntry {
@@ -339,7 +359,9 @@ impl StoredRun {
         };
         let mut projected = self.entries.clone();
         projected.push(entry.clone());
-        replay_journal(&projected)?;
+        let ReplayState::Run(projected_view) = replay_journal(&projected)? else {
+            return Err(RunnerError::InvalidState("appended journal became empty"));
+        };
         let path = self.run_directory.join("journal.jsonl");
         let mut file = OpenOptions::new()
             .append(true)
@@ -355,7 +377,10 @@ impl StoredRun {
             source,
         })?;
         file.sync_data()
-            .map_err(|source| RunnerError::Io { path, source })
+            .map_err(|source| RunnerError::Io { path, source })?;
+        self.entries = projected;
+        self.view = *projected_view;
+        Ok(())
     }
 }
 
@@ -375,7 +400,7 @@ fn read_regular(path: &Path, max_bytes: u64) -> Result<Vec<u8>, RunnerError> {
     })
 }
 
-fn ensure_real_directory(path: &Path) -> Result<(), RunnerError> {
+pub(crate) fn ensure_real_directory(path: &Path) -> Result<(), RunnerError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

@@ -75,6 +75,12 @@ pub enum GitError {
         /// Stable refusal reason.
         reason: &'static str,
     },
+    /// Tie-breaker cannot be measured safely for changed dependency manifest.
+    #[error("candidate dependency delta cannot be measured for `{path}`")]
+    DependencyDeltaUnavailable {
+        /// Changed dependency manifest or lockfile.
+        path: String,
+    },
     /// Git returned an unexpected boolean.
     #[error("Git operation `{operation}` returned unexpected value `{value}`")]
     UnexpectedValue {
