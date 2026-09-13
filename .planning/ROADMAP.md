@@ -11,7 +11,7 @@ Build safe experiment substrate first, then Git isolation, evaluators, product a
 - [x] **Phase 3: Evaluator SDK** - Native traits, JSONL protocol, command, Cargo, and diff adapters. (completed 2026-09-13)
 - [x] **Phase 4: Product Web** - Browser, Lighthouse, accessibility, SEO/GEO adapters and fixture.
 - [x] **Phase 5: Agents and Evidence** - Mutation commands, static report, redaction, and export. (completed 2026-09-13)
-- [ ] **Phase 6: Candle and Portfolio** - Candle backend, Python parity, and reusable portfolio packs.
+- [x] **Phase 6: Candle and Portfolio** - Candle backend, Python parity, and reusable portfolio packs. (completed 2026-09-13)
 
 ## Phase Details
 
@@ -80,7 +80,18 @@ External writes, deploy, outreach, payment, and gate movement remain denied.
 ### Phase 6: Candle and Portfolio
 **Goal**: Add Candle training, parity fixtures, and reusable weekly-bet manifests after product engine is usable.
 **Depends on**: Phase 5
-**Plans**: TBD
+**Plans**: 14 tracked stories; complete 2026-09-13
+
+SHA-pinned tiny corpus, byte-token/shifted-batch pipeline, compact CPU/f32 GPT,
+bounded stateless SGD, complete validation `val_bpb`, immutable checkpoints,
+Phase 3 JSONL evaluator adapter, and disposable kept-candidate loop are
+verified. Python stdlib parity checks exact tokens/batches and bounded
+logit/loss/selected-coordinate differences; full optimizer, upstream BPE,
+CUDA/FA3, and H100 parity are not claimed. Seven portfolio templates cover
+UI, copy, performance, SEO, GEO, calculator, and mobile. Their numeric JSONL
+adapters are placeholders until pinned per product; lab diagnostics never
+promote a bet. Workspace format, clippy, test, rustdoc, clean-clone golden/CPU
+smoke, opt-in Python parity, and bounded candidate gates passed.
 
 ## Progress
 
@@ -91,4 +102,4 @@ External writes, deploy, outreach, payment, and gate movement remain denied.
 | 3. Evaluator SDK | 8/8 | Complete | 2026-09-13 |
 | 4. Product Web | 9/9 | Complete | 2026-09-13 |
 | 5. Agents and Evidence | 13/13 | Complete | 2026-09-13 |
-| 6. Candle and Portfolio | 0/TBD | Not started | - |
+| 6. Candle and Portfolio | 14/14 | Complete | 2026-09-13 |

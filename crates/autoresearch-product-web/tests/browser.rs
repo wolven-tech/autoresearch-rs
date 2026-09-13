@@ -84,8 +84,28 @@ impl LocalServer {
             while !worker_stop.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        stream
+                            .set_nonblocking(false)
+                            .expect("blocking fixture stream");
+                        stream
+                            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                            .expect("bounded fixture read");
                         let mut request = [0_u8; 4096];
-                        let count = stream.read(&mut request).expect("request");
+                        let count = match stream.read(&mut request) {
+                            Ok(0) => continue,
+                            Ok(count) => count,
+                            Err(error)
+                                if matches!(
+                                    error.kind(),
+                                    std::io::ErrorKind::WouldBlock
+                                        | std::io::ErrorKind::TimedOut
+                                        | std::io::ErrorKind::ConnectionReset
+                                ) =>
+                            {
+                                continue;
+                            }
+                            Err(error) => panic!("fixture request: {error}"),
+                        };
                         let request = String::from_utf8_lossy(&request[..count]);
                         let missing = request.starts_with("GET /missing ");
                         let status = if missing { "404 Not Found" } else { "200 OK" };

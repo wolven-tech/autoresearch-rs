@@ -53,3 +53,47 @@ Details: [architecture](docs/plans/2026-09-11-autoresearch-rust-platform-design.
 [evaluator protocol](docs/evaluator-protocol.md),
 [evaluator examples](docs/evaluator-examples.md),
 [evidence board and export](docs/evidence-board.md).
+
+## Candle and portfolio handoff
+
+[Tiny Candle candidate example](examples/nanochat-candle/README.md) runs a
+bounded CPU/f32 experiment in a disposable Git repository. It is distinct
+from the [first usable product loop](#first-usable-rust-loop). The
+[training substrate](crates/autoresearch-training-candle/README.md) describes
+fixed-budget SGD, exact fixture, checkpoints, and evaluator adapter.
+[Cross-language parity status](docs/training-parity.md) and its
+[frozen report](fixtures/tiny/parity-report.json) record exact matches,
+tolerances, and known optimizer discrepancy. This is not upstream nanochat,
+CUDA, H100, or full-model training parity.
+
+[Portfolio templates](examples/portfolio/README.md) cover UI, copy,
+performance, SEO, GEO, calculator, and mobile local diagnostics. Each pack
+needs product-specific paths and pinned evaluator binaries before use.
+Placeholders intentionally fail. Manifests omit external authority by
+default; they do not provide OS-level network isolation for arbitrary child
+processes. Lab metrics, traffic, and praise do not move product bet gates.
+
+## Clean-checkout verification
+
+With Rust toolchain and offline Cargo dependencies available, run from a
+fresh checkout at repository root:
+
+```text
+cargo fmt --all --check
+RUSTC_WRAPPER= cargo test -p autoresearch-config --offline --test tiny_fixture --test portfolio_packs
+RUSTC_WRAPPER= cargo test -p autoresearch-training-candle --offline --test data --test model --test evaluator
+RUSTC_WRAPPER= cargo test -p autoresearch-training-candle --offline --test evaluator disposable_candidate_produces_exact_decision_journal_and_report -- --exact
+RUSTC_WRAPPER= cargo test --workspace --all-features --offline -j 2 -- --test-threads=1
+RUSTC_WRAPPER= cargo clippy --workspace --all-targets --all-features --offline -j 2 -- -D warnings
+RUSTC_WRAPPER= RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --offline --no-deps -j 2
+```
+
+Browser tests require installed Chromium and loopback bind permission. The
+Python stdlib comparison is separate **opt-in** verification:
+
+```text
+RUSTC_WRAPPER= cargo test -p autoresearch-training-candle --offline --test parity -- --ignored --nocapture
+```
+
+CUDA/Metal/half-precision training is unavailable in this crate, not a
+skipped passing check. No optional hardware result is claimed here.

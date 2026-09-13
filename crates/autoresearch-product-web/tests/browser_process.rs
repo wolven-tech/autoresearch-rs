@@ -40,8 +40,28 @@ fn start_server() -> (u16, Arc<AtomicBool>, JoinHandle<()>) {
         while !worker_stop.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    stream
+                        .set_nonblocking(false)
+                        .expect("blocking accepted fixture stream");
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                        .expect("bounded fixture read");
                     let mut request = [0_u8; 4096];
-                    let _ = stream.read(&mut request);
+                    match stream.read(&mut request) {
+                        Ok(0) => continue,
+                        Ok(_) => {}
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                std::io::ErrorKind::WouldBlock
+                                    | std::io::ErrorKind::TimedOut
+                                    | std::io::ErrorKind::ConnectionReset
+                            ) =>
+                        {
+                            continue;
+                        }
+                        Err(error) => panic!("fixture request: {error}"),
+                    }
                     let body = "<!doctype html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Process fixture</title></head><body><h1>Process fixture</h1><script>console.error('fixture')</script></body></html>";
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",

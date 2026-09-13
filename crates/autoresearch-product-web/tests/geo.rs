@@ -97,8 +97,28 @@ impl Drop for Fixture {
 }
 
 fn serve(stream: &mut std::net::TcpStream, scenario: Scenario) {
+    stream
+        .set_nonblocking(false)
+        .expect("blocking accepted stream");
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .expect("bounded request read");
     let mut request = [0_u8; 4096];
-    let count = stream.read(&mut request).expect("request");
+    let count = match stream.read(&mut request) {
+        Ok(0) => return,
+        Ok(count) => count,
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock
+                    | std::io::ErrorKind::TimedOut
+                    | std::io::ErrorKind::ConnectionReset
+            ) =>
+        {
+            return;
+        }
+        Err(error) => panic!("fixture request: {error}"),
+    };
     let text = String::from_utf8_lossy(&request[..count]);
     let path = text.split_whitespace().nth(1).unwrap_or("/");
     let entity = if matches!(scenario, Scenario::EntityConflict) {

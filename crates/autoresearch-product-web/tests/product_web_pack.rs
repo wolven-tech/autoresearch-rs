@@ -54,7 +54,21 @@ impl OfflinePack {
                             .set_read_timeout(Some(std::time::Duration::from_secs(5)))
                             .expect("bounded fixture request read");
                         let mut request = [0_u8; 4096];
-                        let count = stream.read(&mut request).expect("request");
+                        let count = match stream.read(&mut request) {
+                            Ok(0) => continue,
+                            Ok(count) => count,
+                            Err(error)
+                                if matches!(
+                                    error.kind(),
+                                    std::io::ErrorKind::WouldBlock
+                                        | std::io::ErrorKind::TimedOut
+                                        | std::io::ErrorKind::ConnectionReset
+                                ) =>
+                            {
+                                continue;
+                            }
+                            Err(error) => panic!("fixture request: {error}"),
+                        };
                         let text = String::from_utf8_lossy(&request[..count]);
                         let path = text.split_whitespace().nth(1).unwrap_or("/");
                         let (status, media, source) = match path {
