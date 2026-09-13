@@ -758,6 +758,10 @@ impl RawManifest {
             "experiment.budget.max_candidates",
         )?;
         nonzero(
+            self.experiment.budget.max_failures,
+            "experiment.budget.max_failures",
+        )?;
+        nonzero(
             self.experiment.budget.wall_clock_seconds,
             "experiment.budget.wall_clock_seconds",
         )?;
@@ -1611,6 +1615,8 @@ max_redirects = 2
     fn manifest_requires_bounded_commands_and_run() {
         for source in [
             VALID.replace("max_candidates = 8", "max_candidates = 0"),
+            VALID.replace("max_failures = 2", "max_failures = 0"),
+            VALID.replace("wall_clock_seconds = 1800", "wall_clock_seconds = 0"),
             VALID.replace("program = \"codex\"", "program = \" \""),
             VALID.replacen("timeout_seconds = 600", "timeout_seconds = 0", 1),
         ] {
