@@ -1,0 +1,59 @@
+schema_version = 1
+
+[experiment]
+name = "offline product-web fixture"
+
+[experiment.objective]
+name = "fixture_score"
+direction = "maximize"
+
+[experiment.budget]
+max_candidates = 1
+max_failures = 1
+wall_clock_seconds = 120
+
+[scope]
+mutable_paths = ["examples/product-web/index.html"]
+protected_paths = ["examples/product-web/autoresearch.toml"]
+
+[agent]
+program = "manual"
+timeout_seconds = 30
+
+[[evaluators]]
+id = "product_web"
+hard_gates = ["browser_viewport_exact", "browser_no_overflow", "browser_controls_named", "browser_local_only", "browser_route_status"]
+
+[evaluators.command]
+program = "autoresearch-web-evaluator"
+timeout_seconds = 60
+
+[[evaluators.metrics]]
+name = "fixture_score"
+kind = "objective"
+direction = "maximize"
+
+[web]
+origin = "http://127.0.0.1:4419"
+viewports = [320, 390, 768, 1280]
+reduced_motion = true
+
+[[web.routes]]
+name = "home"
+path = "/"
+expected_status = 200
+
+[[web.routes]]
+name = "metadata"
+path = "/metadata"
+expected_status = 200
+
+[[web.routes]]
+name = "missing"
+path = "/missing"
+expected_status = 404
+
+[web.thresholds]
+max_lcp_ms = 2500
+max_cls_milli = 100
+min_accessibility_score = 90

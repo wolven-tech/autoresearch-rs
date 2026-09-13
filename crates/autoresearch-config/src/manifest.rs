@@ -6,6 +6,7 @@ use autoresearch_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
 use thiserror::Error;
+use url::Url;
 
 const SCHEMA_VERSION: u32 = 1;
 const CONTROL_PATHS: [&str; 2] = ["autoresearch.toml", "program.md"];
@@ -72,6 +73,14 @@ pub enum ManifestError {
         /// Frozen objective name.
         name: String,
     },
+    /// Product-web target is not a safe local fixture origin or route.
+    #[error("invalid web target {field}: {reason}")]
+    InvalidWebTarget {
+        /// Field being rejected.
+        field: String,
+        /// Rejection reason.
+        reason: &'static str,
+    },
 }
 
 /// Validated, normalized manifest accepted by runner components.
@@ -82,6 +91,7 @@ pub struct ValidatedManifest {
     scope: MutationBoundary,
     agent: CommandSpec,
     evaluators: Vec<Evaluator>,
+    web: Option<WebTargets>,
     authority: AuthorityCeiling,
 }
 
@@ -123,6 +133,12 @@ impl ValidatedManifest {
     #[must_use]
     pub fn evaluators(&self) -> &[Evaluator] {
         &self.evaluators
+    }
+
+    /// Returns optional frozen local product-web targets.
+    #[must_use]
+    pub const fn web(&self) -> Option<&WebTargets> {
+        self.web.as_ref()
     }
 
     /// Returns maximum declared external authority.
@@ -263,6 +279,88 @@ pub struct MetricDefinition {
     direction: MetricDirection,
 }
 
+/// Local route and capture settings included in frozen manifest identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WebTargets {
+    origin: String,
+    routes: Vec<WebRoute>,
+    viewports: Vec<u32>,
+    reduced_motion: bool,
+    thresholds: WebThresholds,
+}
+
+impl WebTargets {
+    /// Returns loopback HTTP origin without trailing route.
+    #[must_use]
+    pub fn origin(&self) -> &str {
+        &self.origin
+    }
+
+    /// Returns stable route definitions.
+    #[must_use]
+    pub fn routes(&self) -> &[WebRoute] {
+        &self.routes
+    }
+
+    /// Returns frozen CSS viewport widths.
+    #[must_use]
+    pub fn viewports(&self) -> &[u32] {
+        &self.viewports
+    }
+
+    /// Returns whether reduced-motion media emulation is required.
+    #[must_use]
+    pub const fn reduced_motion(&self) -> bool {
+        self.reduced_motion
+    }
+
+    /// Returns optional lab-only thresholds.
+    #[must_use]
+    pub const fn thresholds(&self) -> &WebThresholds {
+        &self.thresholds
+    }
+}
+
+/// One named route in local product-web fixture.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WebRoute {
+    name: String,
+    path: String,
+    expected_status: u16,
+}
+
+impl WebRoute {
+    /// Returns stable route name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns origin-relative route path.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Returns expected HTTP status for route checks.
+    #[must_use]
+    pub const fn expected_status(&self) -> u16 {
+        self.expected_status
+    }
+}
+
+/// Optional lab thresholds; no commercial or product-gate semantics.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WebThresholds {
+    /// Maximum Lighthouse LCP in milliseconds.
+    pub max_lcp_ms: Option<u32>,
+    /// Maximum Lighthouse CLS, multiplied by 1000.
+    pub max_cls_milli: Option<u16>,
+    /// Minimum Lighthouse accessibility score, 0–100.
+    pub min_accessibility_score: Option<u8>,
+}
+
 impl MetricDefinition {
     /// Returns globally unique metric name.
     #[must_use]
@@ -337,7 +435,33 @@ struct RawManifest {
     #[serde(default)]
     evaluators: Vec<RawEvaluator>,
     #[serde(default)]
+    web: Option<RawWebTargets>,
+    #[serde(default)]
     authority: AuthorityCeiling,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawWebTargets {
+    origin: String,
+    routes: Vec<RawWebRoute>,
+    viewports: Vec<u32>,
+    #[serde(default = "default_reduced_motion")]
+    reduced_motion: bool,
+    #[serde(default)]
+    thresholds: WebThresholds,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawWebRoute {
+    name: String,
+    path: String,
+    expected_status: u16,
+}
+
+const fn default_reduced_motion() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -440,6 +564,7 @@ impl RawManifest {
             direction: self.experiment.objective.direction,
         };
         let evaluators = validate_evaluators(self.evaluators, &objective)?;
+        let web = self.web.map(validate_web_targets).transpose()?;
 
         Ok(ValidatedManifest {
             schema_version: self.schema_version,
@@ -451,6 +576,7 @@ impl RawManifest {
             scope,
             agent,
             evaluators,
+            web,
             authority: self.authority,
         })
     }
@@ -487,6 +613,114 @@ fn validate_scope(raw: RawScope) -> Result<MutationBoundary, ManifestError> {
             ManifestError::MutableProtected { mutable, protected }
         }
     })
+}
+
+fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError> {
+    let origin = Url::parse(&raw.origin).map_err(|_| ManifestError::InvalidWebTarget {
+        field: "web.origin".into(),
+        reason: "must be a loopback HTTP origin",
+    })?;
+    let loopback = origin.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    if origin.scheme() != "http"
+        || !loopback
+        || !origin.username().is_empty()
+        || origin.password().is_some()
+        || origin.path() != "/"
+        || origin.query().is_some()
+        || origin.fragment().is_some()
+    {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.origin".into(),
+            reason: "must be a loopback HTTP origin without credentials, path, query, or fragment",
+        });
+    }
+    if raw.viewports != [320, 390, 768, 1280] {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.viewports".into(),
+            reason: "must be exactly [320, 390, 768, 1280] in ascending order",
+        });
+    }
+    if raw.routes.is_empty() {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.routes".into(),
+            reason: "at least one route is required",
+        });
+    }
+    let mut names = HashSet::new();
+    let mut paths = HashSet::new();
+    let mut routes = Vec::with_capacity(raw.routes.len());
+    for (index, route) in raw.routes.into_iter().enumerate() {
+        let name = nonblank(route.name, &format!("web.routes[{index}].name"))?;
+        if !names.insert(name.clone()) {
+            return Err(ManifestError::Duplicate {
+                kind: "web route name",
+                name,
+            });
+        }
+        if !valid_web_route_path(&route.path) {
+            return Err(ManifestError::InvalidWebTarget {
+                field: format!("web.routes[{index}].path"),
+                reason: "must be a plain origin-relative path without escapes or query",
+            });
+        }
+        if !paths.insert(route.path.clone()) {
+            return Err(ManifestError::Duplicate {
+                kind: "web route path",
+                name: route.path,
+            });
+        }
+        if !(100..=599).contains(&route.expected_status) {
+            return Err(ManifestError::InvalidWebTarget {
+                field: format!("web.routes[{index}].expected_status"),
+                reason: "must be an HTTP status from 100 through 599",
+            });
+        }
+        routes.push(WebRoute {
+            name,
+            path: route.path,
+            expected_status: route.expected_status,
+        });
+    }
+    routes.sort_by(|left, right| left.name.cmp(&right.name));
+    if raw.thresholds.max_lcp_ms == Some(0)
+        || raw
+            .thresholds
+            .max_cls_milli
+            .is_some_and(|value| value > 1000)
+        || raw
+            .thresholds
+            .min_accessibility_score
+            .is_some_and(|value| value > 100)
+    {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.thresholds".into(),
+            reason: "threshold is outside supported range",
+        });
+    }
+    Ok(WebTargets {
+        origin: origin.origin().ascii_serialization(),
+        routes,
+        viewports: raw.viewports,
+        reduced_motion: raw.reduced_motion,
+        thresholds: raw.thresholds,
+    })
+}
+
+fn valid_web_route_path(path: &str) -> bool {
+    path.starts_with('/')
+        && !path.starts_with("//")
+        && !path.contains("//")
+        && path
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '-' | '_' | '.'))
+        && path
+            .split('/')
+            .all(|segment| segment != "." && segment != "..")
 }
 
 fn parse_repo_path(path: String) -> Result<RepoPath, ManifestError> {
@@ -605,6 +839,8 @@ fn insert_unique(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::FrozenIdentity;
+    use std::collections::BTreeMap;
 
     const VALID: &str = r#"
 schema_version = 1
@@ -650,12 +886,40 @@ kind = "market_evidence"
 direction = "maximize"
 "#;
 
+    const WEB: &str = r#"
+[web]
+origin = "http://127.0.0.1:4402"
+viewports = [320, 390, 768, 1280]
+reduced_motion = true
+
+[[web.routes]]
+name = "home"
+path = "/"
+expected_status = 200
+
+[[web.routes]]
+name = "missing"
+path = "/missing"
+expected_status = 404
+
+[[web.routes]]
+name = "metadata"
+path = "/metadata"
+expected_status = 200
+
+[web.thresholds]
+max_lcp_ms = 2500
+max_cls_milli = 100
+min_accessibility_score = 90
+"#;
+
     #[test]
     fn manifest_parses_and_adds_control_paths() {
         let manifest = ValidatedManifest::parse(VALID).expect("valid manifest");
         assert_eq!(manifest.schema_version(), 1);
         assert_eq!(manifest.experiment().budget().max_candidates, 8);
         assert_eq!(manifest.evaluators().len(), 1);
+        assert!(manifest.web().is_none(), "legacy v1 manifest stays valid");
         assert_eq!(
             manifest
                 .scope()
@@ -665,6 +929,60 @@ direction = "maximize"
                 .collect::<Vec<_>>(),
             ["autoresearch.toml", "docs/BET.md", "program.md"]
         );
+    }
+
+    #[test]
+    fn web_fixture_targets_are_canonical_and_frozen() {
+        let source = format!("{VALID}{WEB}");
+        let manifest = ValidatedManifest::parse(&source).expect("web manifest");
+        let web = manifest.web().expect("web targets");
+        assert_eq!(web.origin(), "http://127.0.0.1:4402");
+        assert_eq!(web.viewports(), [320, 390, 768, 1280]);
+        assert!(web.reduced_motion());
+        assert_eq!(
+            web.routes().iter().map(WebRoute::name).collect::<Vec<_>>(),
+            ["home", "metadata", "missing"]
+        );
+        assert_eq!(web.routes()[2].expected_status(), 404);
+        let first = FrozenIdentity::capture(&manifest, b"program", &BTreeMap::new(), None)
+            .expect("frozen identity");
+        for changed in [
+            source.replace("max_lcp_ms = 2500", "max_lcp_ms = 2400"),
+            source.replace("reduced_motion = true", "reduced_motion = false"),
+            source.replace("path = \"/metadata\"", "path = \"/meta\""),
+        ] {
+            let changed_manifest = ValidatedManifest::parse(&changed).expect("changed web target");
+            let identity =
+                FrozenIdentity::capture(&changed_manifest, b"program", &BTreeMap::new(), None)
+                    .expect("changed identity");
+            assert_ne!(first.aggregate_sha256, identity.aggregate_sha256);
+        }
+    }
+
+    #[test]
+    fn web_fixture_rejects_unsafe_and_duplicate_targets() {
+        for web in [
+            WEB.replace("127.0.0.1", "example.com"),
+            WEB.replace("/missing", "../missing"),
+            WEB.replace("/missing", "/%2e%2e/missing"),
+            WEB.replace("name = \"missing\"", "name = \"home\""),
+            WEB.replace("path = \"/missing\"", "path = \"/metadata\""),
+            WEB.replace("[320, 390, 768, 1280]", "[320, 390, 768]"),
+            WEB.replace("max_lcp_ms = 2500", "max_lcp_ms = 0"),
+            WEB.replace("expected_status = 404", "expected_status = 700"),
+        ] {
+            assert!(
+                ValidatedManifest::parse(&format!("{VALID}{web}")).is_err(),
+                "{web}"
+            );
+        }
+    }
+
+    #[test]
+    fn checked_in_product_web_manifest_parses() {
+        let source = include_str!("../../../examples/product-web/autoresearch.toml");
+        let manifest = ValidatedManifest::parse(source).expect("checked-in fixture manifest");
+        assert_eq!(manifest.web().expect("web").routes().len(), 3);
     }
 
     #[test]

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Offline product-web evaluator fixture.">
+  <title>Product-web fixture</title>
+  <link rel="canonical" href="http://127.0.0.1:4419/">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 1rem/1.5 system-ui, sans-serif; color: #132437; background: #f6f8fa; }
+    main { width: min(100% - 2rem, 60rem); margin: 2rem auto; }
+    a:focus-visible { outline: 3px solid #2457a7; outline-offset: 3px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
+    article { padding: 1rem; border: 1px solid #718292; background: white; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Product-web fixture</h1>
+    <p>Local pages exercise frozen routes, viewport capture, and metadata checks.</p>
+    <nav aria-label="Fixture pages"><a href="/metadata">Metadata example</a> · <a href="/missing">Expected error</a></nav>
+    <div class="grid">
+      <article><h2>Layout</h2><p>Responsive card at every frozen width.</p></article>
+      <article><h2>Evidence</h2><p>Checks are lab evidence, never market receipts.</p></article>
+    </div>
+  </main>
+</body>
+</html>
