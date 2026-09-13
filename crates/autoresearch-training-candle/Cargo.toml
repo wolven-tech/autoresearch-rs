@@ -1,0 +1,19 @@
+[package]
+name = "autoresearch-training-candle"
+description = "CPU-first Candle training fixture and bounded evaluator substrate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+candle-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
