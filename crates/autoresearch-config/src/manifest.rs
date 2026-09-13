@@ -287,6 +287,7 @@ pub struct WebTargets {
     viewports: Vec<u32>,
     reduced_motion: bool,
     thresholds: WebThresholds,
+    lighthouse: Option<LighthouseSettings>,
 }
 
 impl WebTargets {
@@ -318,6 +319,54 @@ impl WebTargets {
     #[must_use]
     pub const fn thresholds(&self) -> &WebThresholds {
         &self.thresholds
+    }
+
+    /// Returns optional frozen Lighthouse import policy.
+    #[must_use]
+    pub const fn lighthouse(&self) -> Option<&LighthouseSettings> {
+        self.lighthouse.as_ref()
+    }
+}
+
+/// Frozen Lighthouse version, environment, fields, and sample counts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LighthouseSettings {
+    version: String,
+    environment_fingerprint: String,
+    warmup_samples: u8,
+    measured_samples: u8,
+    fields: Vec<String>,
+}
+
+impl LighthouseSettings {
+    /// Returns exact Lighthouse version required by imported reports.
+    #[must_use]
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// Returns expected environment fingerprint.
+    #[must_use]
+    pub fn environment_fingerprint(&self) -> &str {
+        &self.environment_fingerprint
+    }
+
+    /// Returns number of ignored warm-up reports.
+    #[must_use]
+    pub const fn warmup_samples(&self) -> u8 {
+        self.warmup_samples
+    }
+
+    /// Returns number of measured reports aggregated by median.
+    #[must_use]
+    pub const fn measured_samples(&self) -> u8 {
+        self.measured_samples
+    }
+
+    /// Returns allowlisted metric names in manifest order.
+    #[must_use]
+    pub fn fields(&self) -> &[String] {
+        &self.fields
     }
 }
 
@@ -450,6 +499,18 @@ struct RawWebTargets {
     reduced_motion: bool,
     #[serde(default)]
     thresholds: WebThresholds,
+    #[serde(default)]
+    lighthouse: Option<RawLighthouseSettings>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLighthouseSettings {
+    version: String,
+    environment_fingerprint: String,
+    warmup_samples: u8,
+    measured_samples: u8,
+    fields: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -702,12 +763,78 @@ fn validate_web_targets(raw: RawWebTargets) -> Result<WebTargets, ManifestError>
             reason: "threshold is outside supported range",
         });
     }
+    let lighthouse = raw
+        .lighthouse
+        .map(validate_lighthouse_settings)
+        .transpose()?;
     Ok(WebTargets {
         origin: origin.origin().ascii_serialization(),
         routes,
         viewports: raw.viewports,
         reduced_motion: raw.reduced_motion,
         thresholds: raw.thresholds,
+        lighthouse,
+    })
+}
+
+fn validate_lighthouse_settings(
+    raw: RawLighthouseSettings,
+) -> Result<LighthouseSettings, ManifestError> {
+    let version = nonblank(raw.version, "web.lighthouse.version")?;
+    let fingerprint = raw.environment_fingerprint;
+    if fingerprint.len() != 64
+        || !fingerprint
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.lighthouse.environment_fingerprint".into(),
+            reason: "must be 64 lowercase hexadecimal characters",
+        });
+    }
+    if raw.warmup_samples > 10 || !(1..=10).contains(&raw.measured_samples) {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.lighthouse.samples".into(),
+            reason: "warm-up must be 0..=10 and measured count 1..=10",
+        });
+    }
+    if raw.fields.is_empty() || raw.fields.len() > 8 {
+        return Err(ManifestError::InvalidWebTarget {
+            field: "web.lighthouse.fields".into(),
+            reason: "must declare one to eight supported fields",
+        });
+    }
+    let mut seen = HashSet::new();
+    for field in &raw.fields {
+        if !matches!(
+            field.as_str(),
+            "performance"
+                | "accessibility"
+                | "best_practices"
+                | "seo"
+                | "fcp_ms"
+                | "lcp_ms"
+                | "cls"
+                | "tbt_ms"
+        ) {
+            return Err(ManifestError::InvalidWebTarget {
+                field: "web.lighthouse.fields".into(),
+                reason: "field is not on Lighthouse import allowlist",
+            });
+        }
+        if !seen.insert(field) {
+            return Err(ManifestError::Duplicate {
+                kind: "Lighthouse field",
+                name: field.clone(),
+            });
+        }
+    }
+    Ok(LighthouseSettings {
+        version,
+        environment_fingerprint: fingerprint,
+        warmup_samples: raw.warmup_samples,
+        measured_samples: raw.measured_samples,
+        fields: raw.fields,
     })
 }
 
@@ -913,6 +1040,15 @@ max_cls_milli = 100
 min_accessibility_score = 90
 "#;
 
+    const LIGHTHOUSE: &str = r#"
+[web.lighthouse]
+version = "fixture-lighthouse-v1"
+environment_fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+warmup_samples = 1
+measured_samples = 3
+fields = ["performance", "accessibility", "best_practices", "seo", "fcp_ms", "lcp_ms", "cls", "tbt_ms"]
+"#;
+
     #[test]
     fn manifest_parses_and_adds_control_paths() {
         let manifest = ValidatedManifest::parse(VALID).expect("valid manifest");
@@ -983,6 +1119,40 @@ min_accessibility_score = 90
         let source = include_str!("../../../examples/product-web/autoresearch.toml");
         let manifest = ValidatedManifest::parse(source).expect("checked-in fixture manifest");
         assert_eq!(manifest.web().expect("web").routes().len(), 3);
+    }
+
+    #[test]
+    fn lighthouse_policy_is_frozen_and_rejects_unsafe_fields() {
+        let source = format!("{VALID}{WEB}{LIGHTHOUSE}");
+        let manifest = ValidatedManifest::parse(&source).expect("Lighthouse policy");
+        let policy = manifest
+            .web()
+            .expect("web")
+            .lighthouse()
+            .expect("lighthouse");
+        assert_eq!(policy.warmup_samples(), 1);
+        assert_eq!(policy.measured_samples(), 3);
+        assert_eq!(policy.fields().len(), 8);
+        let baseline = FrozenIdentity::capture(&manifest, b"program", &BTreeMap::new(), None)
+            .expect("baseline identity");
+        let changed = source.replace("measured_samples = 3", "measured_samples = 4");
+        let changed_manifest = ValidatedManifest::parse(&changed).expect("changed policy");
+        let changed_identity =
+            FrozenIdentity::capture(&changed_manifest, b"program", &BTreeMap::new(), None)
+                .expect("changed identity");
+        assert_ne!(baseline.aggregate_sha256, changed_identity.aggregate_sha256);
+        for invalid in [
+            source.replace("measured_samples = 3", "measured_samples = 0"),
+            source.replace("warmup_samples = 1", "warmup_samples = 11"),
+            source.replace("\"tbt_ms\"", "\"inp_ms\""),
+            source.replace("\"tbt_ms\"", "\"seo\""),
+            source.replace(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "not-a-hash",
+            ),
+        ] {
+            assert!(ValidatedManifest::parse(&invalid).is_err());
+        }
     }
 
     #[test]

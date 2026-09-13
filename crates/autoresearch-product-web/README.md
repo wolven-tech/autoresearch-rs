@@ -18,3 +18,15 @@ not commercial validation or grounds to move a product bet gate.
 Run `cargo test -p autoresearch-product-web` with local Chromium available on
 `PATH` or `CHROMIUM_PATH`. Browser tests skip when Chromium is unavailable;
 CI must supply it for a meaningful browser gate.
+
+Lighthouse import is separate from live execution. `web.lighthouse` freezes
+version, a 64-character environment fingerprint, warm-up count, measured count,
+and up to eight allowlisted fields. Each run-owned JSON artifact wraps a
+standard Lighthouse report as
+`{"environment_fingerprint":"…","report":{…}}`. Import rejects changed
+version, fingerprint, route, missing declared fields, unsafe paths, and
+non-finite values. Warm-ups are validated but excluded from median; measured
+raw samples remain in evidence. Category scores use 0–100; FCP/LCP/TBT use
+milliseconds; CLS remains unitless. INP is deliberately absent from this lab
+adapter. No Lighthouse binary is bundled or silently substituted with another
+score; missing tool means unavailable live measurement.

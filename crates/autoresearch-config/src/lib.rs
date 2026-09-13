@@ -7,6 +7,6 @@ pub use autoresearch_core::{MutationBoundary as Scope, RepoPath};
 pub use identity::{FrozenIdentity, IdentityError, InputDigest};
 pub use manifest::{
     AuthorityCeiling, Budget, CommandSpec, Evaluator, Experiment, ExternalCapability,
-    ManifestError, MetricDefinition, Objective, ValidatedManifest, WebRoute, WebTargets,
-    WebThresholds,
+    LighthouseSettings, ManifestError, MetricDefinition, Objective, ValidatedManifest, WebRoute,
+    WebTargets, WebThresholds,
 };
