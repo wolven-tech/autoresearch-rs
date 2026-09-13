@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "tokenizer": "utf8_bytes_bos_v1",
+  "normalization": "none",
+  "bos_token_id": 256,
+  "vocab_size": 257,
+  "seed": 23,
+  "sequence_length": 8,
+  "batch_size": 2,
+  "train_sha256": "e588add23a17cc6358e5b5d6a4918537451653c66f42b7b4afaad3a39594c7d8",
+  "validation_sha256": "d5b6bb709666941408c47bc007054f50c98743f6f82f4765a0b1b0d40f808454"
+}
