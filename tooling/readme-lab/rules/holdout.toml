@@ -1,0 +1,306 @@
+[[rule]]
+id = "emoji-in-heading"
+name = "Emoji in a heading"
+category = "emoji"
+weight = 5
+kind = "regex"
+lines = ["heading"]
+text = "nocode"
+pattern = '''^\s{0,3}#{1,6}\s+.*?(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\x{FE0F})'''
+example_bad = '''
+## 🚀 Features
+'''
+example_good = '''
+## Install
+'''
+
+[[rule]]
+id = "emoji-trailing-tone"
+name = "Emoji at the end of a sentence"
+category = "emoji"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''[\p{L}\p{N}.!?,)]\s*(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\x{FE0F})\s*$'''
+example_bad = '''
+Happy hacking! 🎉
+'''
+example_good = '''
+Tests pass on Linux and macOS.
+'''
+
+[[rule]]
+id = "bold-density"
+name = "Bold density per 100 prose words"
+category = "emphasis"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''\*\*[^*\n]+?\*\*|__[^_\n]+?__'''
+min_prose_words = 150
+density_above = 2.0
+score = "density_excess"
+example_bad = '''
+Foo is **fast**, **safe**, and **simple** to **deploy** with **zero** config. It is also **small**.
+
+The binary reads events from the journal directory and writes one ledger file per tenant. Each run starts by checking the schema version recorded in the journal header, and it stops with exit code 2 when that version is newer than the binary understands. Operators usually run the check command in CI before a deploy, because a failed check there costs seconds while a failed migration in production costs an incident review.
+
+Configuration lives in environment variables only. TENANT_ID selects the tenant, JOURNAL_DIR points at the journal, and LEDGER_DIR names the output directory. When any of the three is missing the binary prints the name of the missing variable and exits before it opens a single file, so a misconfigured host never produces a partial ledger that someone might later mistake for a complete one.
+
+Upgrades replace the binary in place; the journal format has not changed since version 0.4.
+'''
+example_good = '''
+Foo reads no config file. Deploy is one binary copied to the host.
+'''
+
+[[rule]]
+id = "italic-emphasis-density"
+name = "Italic emphasis density"
+category = "emphasis"
+weight = 2
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''(?:^|[^*\w\\])\*[^*\s](?:[^*\n]{0,60}[^*\s])?\*(?:[^*\w]|$)|(?:^|[^_\w\\])_[^_\s](?:[^_\n]{0,60}[^_\s])?_(?:[^_\w]|$)'''
+min_hits = 3
+density_above = 1.5
+score = "once"
+example_bad = '''
+This is *really* important and *very* fast, so *always* run it.
+'''
+example_good = '''
+Run it before every push; the hook does not.
+'''
+
+[[rule]]
+id = "empty-section"
+name = "Empty section"
+category = "headings"
+weight = 4
+kind = "heading_followed_by_heading"
+relation = "same_or_shallower"
+example_bad = '''
+## Roadmap
+
+## License
+'''
+example_good = '''
+## License
+
+MIT.
+'''
+
+[[rule]]
+id = "heading-depth-over-3"
+name = "Heading depth greater than 3"
+category = "headings"
+weight = 3
+kind = "regex"
+lines = ["heading"]
+text = "nocode"
+pattern = '''^\s{0,3}#{4,6}\s+\S'''
+min_hits = 3
+score = "once"
+example_bad = '''
+#### Advanced Options
+
+#### Environment
+
+<h5>Flags</h5>
+'''
+example_good = '''
+### Options
+
+#### Markdown
+
+#### JSON
+'''
+
+[[rule]]
+id = "skipped-heading-level"
+name = "Skipped heading level"
+category = "headings"
+weight = 2
+kind = "skipped_heading_level"
+example_bad = '''
+## Setup
+#### Linux
+'''
+example_good = '''
+## Setup
+### Linux
+'''
+
+[[rule]]
+id = "why-heading"
+name = "'Why X?' heading"
+category = "headings"
+weight = 3
+kind = "regex"
+lines = ["heading"]
+text = "nocode"
+pattern = '''(?i)^\s{0,3}#{1,6}\s+(?:[^\p{L}\p{N}\s]+\s*)?why\s+(?:(?:choose|use|pick)\s+)?[\p{L}\p{N}._-]+(?:\s+[\p{L}\p{N}._-]+){0,2}\s*\?\s*#*\s*$'''
+example_bad = '''
+## Why Choose Foo?
+'''
+example_good = '''
+## Why reads are tenant-scoped
+'''
+
+[[rule]]
+id = "lets-transition"
+name = "'Let's' transition"
+category = "hedging"
+weight = 3
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''(?i)(?:^|[.!?:]\s+|^\s*(?:[-*+]|\d{1,3}[.)]|#{1,6}|(?:>\s*)+)\s*)let(?:'|\x{2019})?s\s+(?:dive|get (?:started|into|going)|explore|break (?:it |this |things )?down|take a (?:look|closer look|deep)|begin|jump|kick (?:things )?off|unpack|walk through|wrap up)\b'''
+example_bad = '''
+> Let's dive in.
+'''
+example_good = '''
+## Install
+
+Let's say you're playing with some of the data. Let's grab it and do a join.
+'''
+
+[[rule]]
+id = "marketing-cta-ending"
+name = "Marketing call to action or sign-off"
+category = "hype"
+weight = 5
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading", "html"]
+text = "clean"
+pattern = '''(?i)\b(?:give (?:us|it|this(?: (?:repo|project))?) a star|star (?:this|the|our) (?:repo|repository|project)|leave a star|don(?:'|\x{2019})?t forget to star|if you (?:find|found|like|liked|enjoy) (?:this|it)[^.!\n]{0,40}\b(?:star|share)|happy (?:coding|hacking|building|shipping|testing)|(?:made|built) with love|show (?:your|some) (?:support|love)|join (?:our|the) (?:growing )?community)\b|\b(?:made|built) with\s*\x{2764}|\ba\s*\x{2B50}'''
+example_bad = '''
+Happy coding! If you find this useful, give it a ⭐.
+'''
+example_good = '''
+MIT licensed.
+'''
+
+[[rule]]
+id = "leverage-harness-verb"
+name = "'Leverage' or 'harness' as a verb"
+category = "lexicon"
+weight = 3
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''(?i)\b(?:leverag(?:es|ed|ing)|harness(?:ed|ing)|(?:to|can|will|we|you|they|easily|simply)\s+(?:leverage|harness)\s+(?:the|its|their|our|your|this|these|existing|modern|powerful)\b)'''
+example_bad = '''
+Foo leverages Tokio to deliver speed.
+'''
+example_good = '''
+Foo runs on Tokio's multi-thread runtime. The integration runner and harness share one lockfile.
+'''
+
+[[rule]]
+id = "significance-inflation"
+name = "Significance-inflating phrasing"
+category = "lexicon"
+weight = 3
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''(?i)\b(?:(?:serves|stands) as (?:a|an|the) (?:foundation|backbone|cornerstone|testament|bridge|gateway|hub|catalyst|reminder|beacon|centerpiece|linchpin)|plays? an? (?:crucial|pivotal|vital|key|central) role|(?:is|as) a testament to|(?:underscores?|highlights?) the importance|pav(?:e|es|ed|ing) the way|sets? the stage|at the (?:heart|core) of|an? (?:wide|broad|diverse) (?:range|variety|array) of|valuable insights)\b'''
+example_bad = '''
+The event store serves as the backbone of the platform.
+'''
+example_good = '''
+The event store is the only datastore. The first row serves as the header unless you pass `--no-header`.
+'''
+
+[[rule]]
+id = "nested-list-depth"
+name = "List nested more than one level"
+category = "lists"
+weight = 3
+kind = "nested_list_depth"
+min_depth = 3
+example_bad = '''
+- Setup
+  - Linux
+    - Debian
+'''
+example_good = '''
+- Setup on Linux: Debian needs `libssl-dev`.
+'''
+
+[[rule]]
+id = "exclamation-mark"
+name = "Exclamation marks in prose"
+category = "punctuation"
+weight = 3
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''[\p{L}\p{N})\]]!+(?:[\s*_"'\]]|$)'''
+min_hits = 2
+density_above = 0.3
+example_bad = '''
+Get started in seconds！
+
+No config needed&#33;
+'''
+example_good = '''
+First run takes 38s; later runs take 4s. (Please file a bug report!) Anything else is a bug too (please file a bug report!).
+'''
+
+[[rule]]
+id = "preamble-opener"
+name = "Scene-setting opener"
+category = "structure"
+weight = 4
+kind = "regex"
+scope = "first_paragraph"
+text = "nocode"
+pattern = '''(?i)^\s*(?:[^\p{L}\p{N}\s]+\s*)?(?:in today(?:'|\x{2019})?s\b|in the (?:ever[- ])?(?:evolving|changing|fast[- ]paced|rapidly)|in an era\b|in a world where\b|welcome to\b|meet\s+\S+\s*(?:[\x{2014}:,]|-)|introducing\b|say goodbye to\b|tired of\b|have you ever\b|imagine\b|are you (?:looking|tired|struggling)\b|looking for an?\b|(?:this|the) (?:repository|repo|project) (?:aims to|is (?:a|an) (?:powerful|comprehensive|modern|simple|robust|cutting-edge|curated)|provides (?:a|an) (?:powerful|comprehensive|seamless|robust|simple|easy))\b)'''
+example_bad = '''
+<p align="center"><img src="logo.png"></p>
+
+Welcome to Foo, the modern way to ship.
+'''
+example_good = '''
+This repository contains the README evaluator, two rule files, and 14 fixtures that pin each rule's behaviour.
+'''
+
+[[rule]]
+id = "summary-closer-paragraph"
+name = "Summary closer paragraph"
+category = "structure"
+weight = 4
+kind = "regex"
+scope = "closing_paragraphs"
+text = "nocode"
+pattern = '''(?i)^\s*(?:(?:in (?:conclusion|summary|short|a nutshell)|to (?:sum up|summarize|summarise|wrap up|conclude)|all in all|by following (?:these|this|the above)|with (?:these|this) (?:steps|setup|tools?),? you)\b|(?:overall|ultimately),)'''
+example_bad = '''
+In summary, Foo makes builds fast and simple.
+'''
+example_good = '''
+Limits: the gate does not render a page; open the view yourself.
+'''
+
+[[rule]]
+id = "unfilled-template-placeholder"
+name = "Unfilled template placeholder"
+category = "code"
+weight = 4
+kind = "regex"
+scope = "all"
+text = "raw"
+pattern = '''(?i)(?:\b(?:your[-_]?(?:user(?:name)?|github[-_]?username|org(?:anization)?|repo(?:sitory)?(?:[-_]?name)?|project(?:[-_]?name)?)|yourusername|yourname|path/to/your)\b|<(?:your|repo|project|username)[^>\n]{0,30}>|\[(?:your name|insert[^\]\n]{0,40}|todo[^\]\n]{0,40})\]|\b20\d\d-xx-xx\b|github\.com/(?:user|username|owner|org)/(?:repo|project|repository)\b)'''
+example_bad = '''
+```bash
+git clone https://github.com/yourusername/foo.git
+```
+'''
+example_good = '''
+```bash
+git clone https://github.com/all-source-os/all-source.git
+```
+'''

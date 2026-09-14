@@ -1,0 +1,1209 @@
+[[rule]]
+id = "badge-wall"
+name = "Badge wall"
+category = "badges"
+weight = 3
+kind = "regex"
+lines = ["heading", "list_item", "table_row", "quote", "html", "rule", "paragraph"]
+text = "nocode"
+pattern = '''!\[[^\]]*\]\(\s*<?https?://(?:img\.shields\.io|badgen\.net|flat\.badgen\.net|badge\.fury\.io|codecov\.io/[^)\s]*badge|github\.com/[^)\s]+/(?:actions/)?workflows/[^)\s]+/badge\.svg|[^)\s]*/badges?(?:\.svg|/)[^)\s]*)|<img\s[^>]*src=["']?https?://(?:img\.shields\.io|badgen\.net)'''
+min_hits = 4
+subtract = 3
+example_bad = '''
+![license](https://img.shields.io/badge/license-MIT-blue.svg)
+![stars](https://img.shields.io/github/stars/acme/foo.svg)
+![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+![made with Rust](https://img.shields.io/badge/made%20with-Rust-orange.svg)
+![maintained](https://img.shields.io/badge/maintained-yes-green.svg)
+![CI](https://github.com/acme/foo/actions/workflows/ci.yml/badge.svg)
+![coverage](https://codecov.io/gh/acme/foo/branch/main/graph/badge.svg)
+![version](https://img.shields.io/crates/v/foo.svg)
+
+# foo
+'''
+example_good = '''
+![CI](https://github.com/acme/foo/actions/workflows/ci.yml/badge.svg)
+![crates.io](https://img.shields.io/crates/v/foo.svg)
+
+# foo
+'''
+
+[[rule]]
+id = "vanity-badge"
+name = "Vanity badge"
+category = "badges"
+weight = 4
+kind = "regex"
+lines = ["heading", "list_item", "table_row", "quote", "html", "rule", "paragraph"]
+text = "nocode"
+pattern = '''(?i)(?:img\.shields\.io|badgen\.net)/[^)\s"']*(?:made[_-]?with|prs[_-]?welcome|maintained|open[_-]?source|awesome|love|contributions[_-]?welcome|say[_-]?thanks|ask[_-]?me|visitors|hits|ai[_-]?powered|built[_-]?with|powered[_-]?by)'''
+example_bad = '''
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+'''
+example_good = '''
+![crates.io](https://img.shields.io/crates/v/foo.svg)
+'''
+
+[[rule]]
+id = "callout-blockquote-spam"
+name = "Callout spam"
+category = "callouts"
+weight = 3
+kind = "regex"
+lines = ["quote"]
+text = "nocode"
+pattern = '''(?i)^\s*>\s*(?:\[!(?:note|tip|important|warning|caution)\]|(?:\*\*|__)?(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\x{FE0F}|\x{2139}\x{FE0F}?)?\s*(?:\*\*|__)?(?:note|tip|pro[- ]?tip|important|warning|caution|heads[- ]?up|info|hint|remember)\b)'''
+per_line = true
+group_consecutive = true
+combine = "any"
+min_hits = 3
+density_words = 300.0
+density_above = 1.0
+score = "density_excess"
+example_bad = '''
+> [!NOTE]
+> The cache lives in `target/`.
+
+Run the build.
+
+> 💡 **Tip:** clone the build dir first.
+
+Run the tests.
+
+> [!IMPORTANT]
+> Tests need a running Core.
+'''
+example_good = '''
+> [!WARNING]
+> This deletes the journal.
+
+The binary reads events from the journal directory and writes one ledger file per tenant. Each run starts by checking the schema version recorded in the journal header, and it stops with exit code 2 when that version is newer than the binary understands. Operators usually run the check command in CI before a deploy, because a failed check there costs seconds while a failed migration in production costs an incident review.
+
+Configuration lives in environment variables only. TENANT_ID selects the tenant, JOURNAL_DIR points at the journal, and LEDGER_DIR names the output directory. When any of the three is missing the binary prints the name of the missing variable and exits before it opens a single file, so a misconfigured host never produces a partial ledger that someone might later mistake for a complete one.
+
+Upgrades replace the binary in place; the journal format has not changed since version 0.4.
+
+Journal compaction runs only when the operator asks for it. The compact command copies every live event into a new segment, verifies the copy by replaying it into a scratch ledger, and swaps the segment in with a single rename. If the replay disagrees with the current ledger in any field, the command leaves the old segment untouched and prints the first event whose projection differs, with its offset and tenant, so the operator can open that event and decide whether the journal or the projection code is wrong.
+
+Retention is a separate decision from compaction. Events older than the retention window stay in the journal until an operator runs the prune command with an explicit cutoff date, and prune refuses to run while any tenant has an unverified ledger. That ordering keeps the one irreversible step behind the one check that can catch a bad projection before the source events are gone for good.
+'''
+
+[[rule]]
+id = "inline-tip-label"
+name = "Inline Note/Tip label"
+category = "callouts"
+weight = 3
+kind = "regex"
+lines = ["paragraph", "list_item", "html"]
+text = "nocode"
+pattern = '''(?i)^\s*(?:[-*+]\s+)?(?:(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\x{FE0F})\s*)?(?:\*\*|__)?(?:note|tip|pro[- ]?tip|important|heads[- ]?up|nb|hint|remember|warning)(?:\*\*|__)?\s*(?::|\x{2014}|-)\s*(?:\*\*|__)?\s'''
+min_hits = 2
+example_bad = '''
+<b>Pro tip:</b> cache the build dir.
+
+Heads-up: the cache is shared between worktrees.
+'''
+example_good = '''
+Clone the build dir with `cp -Rc`; a cold one makes the first gate time out.
+'''
+
+[[rule]]
+id = "code-fence-no-language"
+name = "Code fence without a language"
+category = "code"
+weight = 2
+kind = "regex"
+scope = "fence_openers"
+text = "raw"
+pattern = '''^\s{0,3}(?:`{3,}|~{3,})\s*$'''
+score = "once"
+example_bad = '''
+```
+cargo xtask ci
+```
+'''
+example_good = '''
+```bash
+cargo xtask ci
+```
+'''
+
+[[rule]]
+id = "narrated-code-comments"
+name = "Narrated comments in code blocks"
+category = "code"
+weight = 3
+kind = "regex"
+scope = "fenced_code"
+text = "raw"
+pattern = '''(?i)^\s*(?:#|//|--|/\*|\*)\s*(?:step\s*\d+\s*[:.)-]|now,?\s+(?:we|let(?:'|\x{2019})?s|you)\b|(?:first|next|then|finally),?\s+(?:we|let(?:'|\x{2019})?s)\b|this (?:line|command|function|code) (?:will|is used to) (?:install|create|download|set up|initiali[sz]e|start|print|define|import)\b|here we\b)'''
+example_bad = '''
+```bash
+# Step 1: install dependencies
+npm install
+```
+'''
+example_good = '''
+```bash
+# tenant_id is required or Core returns 200 with no events
+foo query --tenant acme
+```
+'''
+
+[[rule]]
+id = "wall-of-code"
+name = "Wall of code with no prose"
+category = "code"
+weight = 2
+kind = "wall_of_code"
+min_block_lines = 30
+lookback_lines = 3
+ratio_above = 0.7
+min_total_lines = 60
+example_bad = '''
+## Usage
+
+```rust
+use foo::{Journal, Ledger, Tenant};
+use std::path::PathBuf;
+
+fn main() -> Result<(), foo::Error> {
+    let journal_dir = PathBuf::from(std::env::var("JOURNAL_DIR")?);
+    let ledger_dir = PathBuf::from(std::env::var("LEDGER_DIR")?);
+    let tenant = Tenant::new(std::env::var("TENANT_ID")?);
+    let journal = Journal::open(&journal_dir)?;
+    journal.check_schema()?;
+    let mut ledger = Ledger::create(&ledger_dir, &tenant)?;
+    for event in journal.events_for(&tenant)? {
+        let event = event?;
+        match event.kind() {
+            "deposit" => ledger.credit(event.amount())?,
+            "withdrawal" => ledger.debit(event.amount())?,
+            "transfer" => {
+                ledger.debit(event.amount())?;
+                ledger.note_transfer(event.counterparty())?;
+            }
+            other => {
+                eprintln!("skipping unknown event kind {other}");
+            }
+        }
+    }
+    ledger.verify_against(&journal)?;
+    ledger.finish()?;
+    println!("wrote {}", ledger.path().display());
+    Ok(())
+}
+
+fn _unused_helper(tenant: &Tenant) -> String {
+    format!("tenant-{}", tenant.id())
+}
+```
+'''
+example_good = '''
+The tenant query must carry tenant_id or Core returns an empty 200:
+
+```rust
+use foo::{Journal, Tenant};
+
+fn main() -> Result<(), foo::Error> {
+    let journal = Journal::open("journal")?;
+    let tenant = Tenant::new("acme");
+    let events = journal.events_for(&tenant)?;
+    for event in events {
+        println!("{:?}", event?);
+    }
+    Ok(())
+}
+```
+'''
+
+[[rule]]
+id = "symbol-shorthand-in-prose"
+name = "Arrow or symbol shorthand in prose"
+category = "compression"
+weight = 2
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''[\p{L}\p{N}]\s+(?:[\x{2190}-\x{21FF}\x{27F0}-\x{27FF}\x{2794}-\x{27BF}\x{2900}-\x{297F}\x{2B04}-\x{2B0D}]|-{1,2}>|=>)\s+[\p{L}\p{N}]|(?:^|\s)(?:w/o?|b/c)(?:\s|$)'''
+per_line = true
+min_hits = 2
+example_bad = '''
+Parse ➔ validate ➔ store w/ retries and backoff
+
+Cache hit &rArr; skip the fetch
+'''
+example_good = '''
+Parse the payload, validate it, then store it with retries.
+
+`append('/src', 'foo')` → `'foo/src'`, on Linux (x64 & arm64).
+'''
+
+[[rule]]
+id = "telegraphic-article-drop"
+name = "Telegraphic article-dropped sentences"
+category = "compression"
+weight = 4
+kind = "telegraphic"
+pattern = '''(?i)\b(?:a|an|the|this|that|these|those|it|its|my|your|our|their|them|each|every|you|we|they)\b'''
+min_sentence_words = 6
+list_item_min_words = 6
+min_units = 8
+ratio_above = 0.5
+score = "ratio_excess"
+example_bad = '''
+Workspace ships frozen contracts. Gate enforces boundary via cross-compile. Reads need tenant scope or return empty.
+Worker claims job from queue before running any step. Runner records every decision in journal before exit.
+Evaluator reads frozen manifest and rejects unknown fields early. Verify reruns kept commits against pinned evaluator binaries.
+Report command writes versioned JSON plus optional HTML page. Export copies selected artifacts into fresh review directory.
+Resume follows journal state and refuses ambiguous Git effects.
+'''
+example_good = '''
+The workspace ships frozen contracts, and the gate enforces the boundary by cross-compiling.
+'''
+
+[[rule]]
+id = "emoji-cluster"
+name = "Emoji cluster"
+category = "emoji"
+weight = 4
+kind = "regex"
+lines = ["heading", "list_item", "table_row", "quote", "html", "rule", "paragraph"]
+text = "clean"
+pattern = '''(?:(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\x{FE0F})\s*){2,}'''
+example_bad = '''
+Ship it 🎉🚀✨
+'''
+example_good = '''
+| lint | ✅ |
+'''
+
+[[rule]]
+id = "emoji-decorative-in-table"
+name = "Non-status emoji inside a table"
+category = "emoji"
+weight = 2
+kind = "regex"
+lines = ["table_row"]
+text = "nocode"
+pattern = '''[\p{Emoji_Presentation}--[\x{2705}\x{274C}\x{26D4}\x{1F7E2}\x{1F7E1}\x{1F534}\x{1F501}\x{1F504}\x{1F6D1}\x{23F3}]]|[\p{Extended_Pictographic}--[\x{2705}\x{274C}\x{26A0}\x{2714}\x{2716}\x{26D4}\x{1F6D1}]]\x{FE0F}|\|\s*(?:\x{2705}|\x{274C}|\x{26D4}|\x{1F6D1}|\x{26A0}\x{FE0F}?|\x{2714}\x{FE0F}?)\s*[^\s|]+\s+[^\s|]+\s+[^\s|]+'''
+example_bad = '''
+| Speed | 🚀 |
+| Build | ✅ Blazing fast builds |
+'''
+example_good = '''
+| cargo test | ✅ |
+| live suite | ⛔ |
+'''
+
+[[rule]]
+id = "emoji-line-lead"
+name = "Emoji used as a bullet icon"
+category = "emoji"
+weight = 5
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading", "html"]
+text = "nocode"
+pattern = '''^\s*(?:(?:[-*+]|\d{1,3}[.)])\s+|#{1,6}\s+|(?:>\s*)+)?(?:\*\*|__)?(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\x{FE0F})'''
+example_bad = '''
+- :white_check_mark: Zero config
+- ✔ Blazing fast
+
+> &#128161; Clone the build directory first.
+'''
+example_good = '''
+- Zero config: no file is read at startup
+'''
+
+[[rule]]
+id = "emoji-outside-table"
+name = "Emoji outside a table"
+category = "emoji"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading", "html", "rule"]
+text = "clean"
+pattern = '''\p{Emoji_Presentation}|\p{Extended_Pictographic}\x{FE0F}'''
+example_bad = '''
+Fast builds 🚀 and zero config.
+'''
+example_good = '''
+Cold build 2.1s, warm 0.4s on an M2.
+'''
+
+[[rule]]
+id = "bold-as-fake-heading"
+name = "Bold line used as a heading"
+category = "emphasis"
+weight = 3
+kind = "regex"
+lines = ["paragraph"]
+text = "nocode"
+pattern = '''^\s*(?:\*\*[^*\n]{1,79}[^*\n:.!?]\*\*|__[^_\n]{1,79}[^_\n:.!?]__)\s*$'''
+require_blank_before = true
+example_bad = '''
+<b>Installation</b>
+
+Run the installer.
+'''
+example_good = '''
+## Installation
+
+Run the installer.
+'''
+
+[[rule]]
+id = "bold-colon-label"
+name = "Bold colon label opening a paragraph"
+category = "emphasis"
+weight = 5
+kind = "regex"
+lines = ["paragraph", "quote"]
+text = "nocode"
+pattern = '''^\s*(?:>\s*)?(?:\*\*[^*\n]{1,60}:\*\*|\*\*[^*\n]{1,60}\*\*:|__[^_\n]{1,60}:__)(?:\s|$)'''
+min_hits = 2
+example_bad = '''
+***Why it matters:*** latency drops.
+
+<strong>The catch</strong>: it needs Core.
+'''
+example_good = '''
+Latency drops from 180ms to 40ms because the query is tenant-scoped.
+'''
+
+[[rule]]
+id = "bold-lead-bullet"
+name = "Bold-lead bullet list"
+category = "emphasis"
+weight = 5
+kind = "regex"
+lines = ["list_item"]
+text = "nocode"
+pattern = '''^\s*(?:[-*+]|\d{1,3}[.)])\s+(?:\*\*(?:[A-Z][^*\n]{0,79}|[^*\n]{0,40}\S\s+\S[^*\n]{0,40})\*\*|__(?:[A-Z][^_\n]{0,79}|[^_\n]{0,40}\S\s+\S[^_\n]{0,40})__)\s*(?:[:\x{2014}\x{2013}]|-{1,2})?\s*\S'''
+per_line = true
+min_hits = 3
+min_ratio = 0.4
+example_bad = '''
+- **Fast**: builds in 2s
+- ***Safe***: no unsafe code
+- <b>small binary</b>: 300KB
+'''
+example_good = '''
+- Builds in 2.1s cold and 0.4s warm on an M2.
+- The binary is 300KB because TLS is rustls-only.
+- **cat** - Concatenate CSV files by row or by column.
+- **count** - Count the rows in CSV data.
+- **sort** - Sort CSV data.
+'''
+
+[[rule]]
+id = "bold-whole-sentence"
+name = "Whole sentence in bold"
+category = "emphasis"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''\*\*(?:[^*\s]+\s+){6,}[^*\s]*[.!?]\*\*|(?:^\s*(?:(?:[-*+]|\d{1,3}[.)])\s+|>\s*)?|[.!?]\s+)\*\*(?:[^*\s]+\s+){6,}[^*\s]*[^*\s.!?]\*\*[.!?](?:\s|$)'''
+example_bad = '''
+**Never run this command against production data**.
+'''
+example_good = '''
+Never run this against **production** data.
+'''
+
+[[rule]]
+id = "boilerplate-contributing"
+name = "Boilerplate Contributing section"
+category = "headings"
+weight = 4
+kind = "section"
+pattern = '''(?i)^\s{0,3}#{1,6}\s+(?:[^\p{L}\p{N}\s]+\s*)?contribut(?:ing|ions?|e)\b'''
+max_body_words = 80
+body_pattern = '''(?i)(?:contributions? (?:are|is) (?:always )?(?:welcome|appreciated|encouraged)|pull requests? (?:are )?welcome|feel free to (?:open|submit|fork)|fork the (?:repo|repository|project)|create (?:a|your) feature branch|git checkout -b feature/|open a pull request)'''
+example_bad = '''
+## 🤝 Contributing
+
+Contributions are welcome! Fork the repo, create a feature branch, and open a pull request.
+'''
+example_good = '''
+## Contributing
+
+Run `cargo xtask ci` before pushing; the pre-push hook runs the same gate and there is no second line behind it.
+'''
+
+[[rule]]
+id = "conclusion-heading"
+name = "Conclusion or summary heading"
+category = "headings"
+weight = 4
+kind = "regex"
+lines = ["heading"]
+text = "nocode"
+pattern = '''(?i)^\s{0,3}#{1,6}\s+(?:[^\p{L}\p{N}\s]+\s*)?(?:conclusions?|in conclusion|summary|in summary|final thoughts|closing thoughts|wrapping up|wrap[- ]up|key takeaways|takeaways|the bottom line|bottom line|tl;?dr|what(?:'|\x{2019})?s next|next steps)\s*[:!?]?\s*#*\s*$'''
+example_bad = '''
+Some text.
+
+Conclusions
+-----------
+'''
+example_good = '''
+## Limits
+'''
+
+[[rule]]
+id = "generic-heading"
+name = "Generic template heading"
+category = "headings"
+weight = 3
+kind = "regex"
+lines = ["heading"]
+text = "nocode"
+pattern = '''(?i)^\s{0,3}#{1,6}\s+(?:(?:[^\p{L}\p{N}\s]+\s*)?(?:overview|introduction|intro|about(?: this project)?|key features|core features|main features|use[- ]cases?|benefits|tech stack|technologies used|built with)(?:\s+overview)?|[^\p{L}\p{N}\s]+\s*(?:features|highlights))\s*[:!]?\s*#*\s*$'''
+example_bad = '''
+<h2>Key Features Overview</h2>
+
+## ✨ Features
+'''
+example_good = '''
+## What breaks when the cache is cold
+
+## How it works
+
+## Features
+'''
+
+[[rule]]
+id = "heading-density"
+name = "Over-sectioning"
+category = "headings"
+weight = 3
+kind = "heading_density"
+min_prose_words = 150
+density_above = 3.0
+min_headings = 5
+max_words_per_heading = 30.0
+score = "once"
+example_bad = '''
+## Overview
+Foo is a CLI.
+## Features
+It is fast.
+## Install
+Run it.
+## Config
+Set it.
+## License
+MIT.
+'''
+example_good = '''
+# foo
+
+foo builds the ledger in 2.1s. Run `cargo install foo`, then `foo build`.
+'''
+
+[[rule]]
+id = "heading-terminal-punctuation"
+name = "Heading ending in colon, question mark or exclamation mark"
+category = "headings"
+weight = 3
+kind = "regex"
+lines = ["heading"]
+text = "nocode"
+pattern = '''^\s{0,3}#{1,6}\s+.*[:!]\s*#*\s*$'''
+unless_ancestor_heading = '''(?i)faq|questions'''
+example_bad = '''
+## Installation:
+'''
+example_good = '''
+## Installation
+
+### What's the relationship between Just and Cargo build scripts?
+'''
+
+[[rule]]
+id = "heading-without-lead-in"
+name = "Heading containing only subheadings"
+category = "headings"
+weight = 2
+kind = "heading_followed_by_heading"
+relation = "deeper"
+min_hits = 2
+example_bad = '''
+## Usage
+### CLI
+Run `foo build`.
+## Config
+### File
+Edit `foo.toml`.
+'''
+example_good = '''
+## Usage
+
+The CLI and the library share one config type.
+
+### CLI
+'''
+
+[[rule]]
+id = "thin-getting-started"
+name = "Getting Started section with one line"
+category = "headings"
+weight = 3
+kind = "section"
+pattern = '''(?i)^\s{0,3}#{1,6}\s+(?:[^\p{L}\p{N}\s]+\s*)?(?:getting started|quick ?start|installation|install|usage)\s*#*\s*$'''
+max_body_lines = 1
+example_bad = '''
+## 🚀 Getting Started
+
+Run `npm i foo`.
+
+## Usage
+'''
+example_good = '''
+## Install
+
+```bash
+cargo install foo
+```
+
+Needs Rust 1.80; CI checks the MSRV.
+'''
+
+[[rule]]
+id = "title-case-headings"
+name = "Title Case subheadings"
+category = "headings"
+weight = 3
+kind = "regex"
+lines = ["heading"]
+text = "nocode"
+pattern = '''^\s{0,3}#{2,6}\s+(?:[^\p{L}\p{N}\s]+\s+)?[A-Z][a-z'\x{2019}]+(?:\s+(?:(?:a|an|the|and|or|of|to|in|on|for|with|vs|via|by|at|from|as)\s+)?[A-Z][a-z'\x{2019}]+){2,}\s*[:?!]?\s*#*\s*$'''
+per_line = true
+min_heading_level = 2
+min_line_words = 3
+min_scope_lines = 2
+min_ratio = 0.5
+min_hits = 2
+score = "once"
+example_bad = '''
+## Getting Started With Docker
+## Key Features Overview
+'''
+example_good = '''
+## Getting started with Docker
+
+## Frequently Asked Questions
+'''
+
+[[rule]]
+id = "chatbot-closer"
+name = "Chatbot closer"
+category = "hedging"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''(?i)\b(?:i hope (?:this|that) helps|hope (?:this|that) helps|feel free to (?:reach out|ask|contact|let (?:us|me) know)|let (?:us|me) know (?:if|what|how)|don(?:'|\x{2019})?t hesitate to|great question|happy to help)\b|\bif you have any (?:questions|feedback)\s*(?:[,.!]\s*(?:feel free|don(?:'|\x{2019})?t hesitate|let us know|reach out)|[.!?]*\s*$)'''
+example_bad = '''
+Feel free to reach out if you have any questions!
+'''
+example_good = '''
+Open an issue with the failing command and its output.
+
+If you have any questions about these, please open an issue in the tutorial repo.
+'''
+
+[[rule]]
+id = "filler-phrases"
+name = "Filler phrases"
+category = "hedging"
+weight = 2
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''(?i)\b(?:it(?:'|\x{2019})?s (?:worth (?:noting|mentioning|pointing out)|important to (?:note|remember|understand|mention))|please note|due to the fact that|when it comes to|at the end of the day|the world of|it goes without saying|needless to say|as (?:mentioned|noted|discussed) (?:above|earlier|previously))\b'''
+min_hits = 2
+example_bad = '''
+It's worth noting that, needless to say, the suite needs Core.
+'''
+example_good = '''
+The live suite needs a running Core. Note that it binds port 3900, so in order to run two suites, keep in mind the second needs another port.
+'''
+
+[[rule]]
+id = "minimizer-density"
+name = "Minimizer word density"
+category = "hedging"
+weight = 2
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''(?i)\b(?:simply|just|easily|basically|actually|effortlessly|straightforward|trivially)\b'''
+min_hits = 3
+density_above = 1.0
+score = "density_excess"
+example_bad = '''
+Simply run the installer, then just edit the file and you're basically done.
+'''
+example_good = '''
+Run the installer, then set TENANT_ID.
+'''
+
+[[rule]]
+id = "preamble-phrases"
+name = "Preamble and false-breadth phrases"
+category = "hedging"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''(?i)\b(?:whether you(?:'|\x{2019})?re|look no further|in today(?:'|\x{2019})?s|dive (?:in|into|deeper)|deep[- ]dive|without further ado|buckle up|ready to (?:get started|dive)|in the (?:ever[- ])?(?:evolving|changing) (?:world|landscape))\b'''
+example_bad = '''
+Whether you're a beginner or an expert, Foo has you covered. Let's dive in!
+'''
+example_good = '''
+Beginners should start with docs/guide.md.
+'''
+
+[[rule]]
+id = "hype-lexicon-tier1"
+name = "Hype lexicon, strong tier"
+category = "hype"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading", "table_row"]
+text = "clean"
+pattern = '''(?i)\b(?:seamless(?:ly)?|blazing(?:ly)?[- ]fast|lightning[- ]?(?:fast|quick)|cutting[- ]edge|game[- ]?chang(?:er|ers|ing)|supercharg(?:e|es|ed|ing)|revolutioni[sz](?:e|es|ed|ing)|revolutionar(?:y|ily)|next[- ]level|world[- ]class|best[- ]in[- ]class|top[- ]notch|unparalleled|frictionless|unleash(?:es|ed|ing)?|delv(?:e|es|ed|ing)|tapestry|testament to|effortless(?:ly)?|groundbreaking|paradigm[- ]shift|embark(?:s|ed|ing)?|beacon of|meticulous(?:ly)?|vibrant|elevat(?:e|es|ing)\s+(?:your|our|their|the|every|each|any|its|this)|empower(?:s|ed|ing|ment)?|unlock(?:s|ed|ing)? (?:the )?(?:full )?(?:power|potential))\b'''
+example_bad = '''
+A blazing-fast, seam&shy;less CLI that unlocks the full potential of your builds.
+'''
+example_good = '''
+A CLI that builds in 2.1s cold. Installing the shim needs elevated privileges.
+'''
+
+[[rule]]
+id = "hype-lexicon-tier2-density"
+name = "Hype lexicon density, weak tier"
+category = "hype"
+weight = 2
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading", "table_row"]
+text = "clean"
+pattern = '''(?i)\b(?:robust|powerful|comprehensive|intuitive|streamlin(?:e|es|ed|ing)|elegant(?:ly)?|feature[- ]rich|production[- ]ready|enterprise[- ]grade|battle[- ]tested|state[- ]of[- ]the[- ]art|bleeding[- ]edge|hassle[- ]free|plug[- ]and[- ]play|level(?:s|ed|ing)? up|pivotal|holistic|showcas(?:e|es|ed|ing)|underscor(?:e|es|ed|ing)|foster(?:s|ed|ing)?|bolster(?:s|ed|ing)?|crucial|cornerstone|myriad|plethora|nuanced|multifaceted|synerg(?:y|ies|istic)|landscape|realm|unlock(?:s|ed|ing)?\s+(?:new|your|powerful|insights|possibilities|productivity|creativity)|magical(?:ly)?|(?:like|pure|sheer)\s+magic)\b'''
+min_hits = 3
+density_words = 150.0
+density_min = 1.0
+score = "density_excess"
+example_bad = '''
+A robust, powerful and comprehensive toolkit with an intuitive API.
+'''
+example_good = '''
+A toolkit with 14 commands; `foo check` runs in 80ms on 10k events. It checks the gzip magic bytes and calls unlock on the file lock before it exits.
+'''
+
+[[rule]]
+id = "colon-reveal"
+name = "Colon or dash reveal"
+category = "lexicon"
+weight = 3
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''(?i)(?:^\s*(?:(?:[-*+]|\d{1,3}[.)])\s+|(?:>\s*)+)?|[.!?]\s+|\*\*)(?:the|here(?:'|\x{2019})?s the|here is the)\s+(?:result|catch|kicker|twist|best part|bottom line|short version|punchline|secret|key insight|takeaway|upshot|good news|bad news|magic|trick)\s*(?:\*\*)?\s*[:\x{2014}]'''
+example_bad = '''
+- The best part: it just works.
+'''
+example_good = '''
+It needs no config file.
+'''
+
+[[rule]]
+id = "isnt-its-reframe"
+name = "'Isn't X. It's Y' reframe"
+category = "lexicon"
+weight = 4
+kind = "regex"
+scope = "joined_paragraphs"
+pattern = '''(?i)\b(?:isn(?:'|\x{2019})t|aren(?:'|\x{2019})t|is\s+not|are\s+not)\s+(?:about\s+)?(?:(?:a|an|the|just)\s+)?[\p{L}\p{N}-]+(?:\s+[\p{L}\p{N}-]+){0,4}\s*(?:[.;:,\x{2014}]|--)\s*(?:it(?:'|\x{2019})s|it\s+is|they(?:'|\x{2019})re|this\s+is|that(?:'|\x{2019})s)\s+(?:a|an|the|about)\b'''
+example_bad = '''
+This isn't a framework, it's a toolkit.
+'''
+example_good = '''
+This isn't set by default. It's read from the environment.
+'''
+
+[[rule]]
+id = "no-x-no-y-just-z"
+name = "'No X, no Y, just Z'"
+category = "lexicon"
+weight = 5
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''(?i)\b(?:no|zero|without)\s+[\p{L}\p{N}-]+(?:\s+[\p{L}\p{N}-]+)?\s*[,.]\s*(?:no|zero|without)\s+[\p{L}\p{N}-]+(?:\s+[\p{L}\p{N}-]+)?\s*[,.]\s*(?:just|only|simply|pure(?:ly)?)\b'''
+example_bad = '''
+Zero config, zero boilerplate, just code.
+'''
+example_good = '''
+No relational database, no TypeScript, and no JavaScript package manager.
+'''
+
+[[rule]]
+id = "not-just-contrast-frame"
+name = "'Not just X, it's Y' frame"
+category = "lexicon"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''(?i)\bnot\s+(?:just|only|merely|simply)\b[^.!?\n]{1,80}?(?:[,;:\x{2014}]|--|[.!?])\s*(?:but|it(?:'|\x{2019})s|it\s+is|they(?:'|\x{2019})re|this\s+is|we(?:'|\x{2019})re)\b'''
+example_bad = '''
+It's not just a linter. It's a workflow.
+'''
+example_good = '''
+It is a linter that runs in the pre-push hook. The link gate checks not only that the target file exists but also that the anchor resolves.
+'''
+
+[[rule]]
+id = "bare-url"
+name = "Bare URL in prose"
+category = "links"
+weight = 1
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "link_stripped"
+pattern = '''\bhttps?://[^\s<>()\[\]]+'''
+example_bad = '''
+See https://example.org/docs/tenant for details.
+'''
+example_good = '''
+See [the tenant query guide](https://example.org/docs/tenant).
+'''
+
+[[rule]]
+id = "vague-link-text"
+name = "'Here' or 'this link' link text"
+category = "links"
+weight = 2
+kind = "regex"
+lines = ["heading", "list_item", "table_row", "quote", "html", "rule", "paragraph"]
+text = "nocode"
+pattern = '''(?i)\[(?:here|click here|this link|this|link|read more|learn more|more info|more|this page|this article|see here|go here)\]\([^)]*\)'''
+example_bad = '''
+Docs are [here](https://x.dev).
+'''
+example_good = '''
+See [the tenant query guide](docs/tenant.md).
+'''
+
+[[rule]]
+id = "consecutive-lists-no-prose"
+name = "Back-to-back lists with no prose"
+category = "lists"
+weight = 3
+kind = "consecutive_lists"
+separator_pattern = '''^\s*(?:\*\*[^*\n]{1,79}[^*\n:.!?]\*\*|__[^_\n]{1,79}[^_\n:.!?]__)\s*$|^\s*(?:>\s*)?(?:\*\*[^*\n]{1,60}:\*\*|\*\*[^*\n]{1,60}\*\*:|__[^_\n]{1,60}:__)(?:\s|$)'''
+min_hits = 2
+score = "once"
+example_bad = '''
+### Pros
+- fast
+- small
+### Cons
+- new
+- few users
+### Verdict
+- try it
+- pin the version
+'''
+example_good = '''
+### Trade-off
+It is fast and small, but new; two teams run it in production.
+'''
+
+[[rule]]
+id = "list-dominant-doc"
+name = "List-dominant document"
+category = "lists"
+weight = 3
+kind = "list_dominant"
+min_prose_words = 200
+ratio_above = 1.5
+score = "once"
+example_bad = '''
+# foo
+
+foo turns an event journal into per-tenant ledgers.
+It ships as one binary with no runtime dependencies.
+
+- Reads events from the journal directory
+- Writes one ledger file per tenant
+- Checks the schema version before reading
+- Stops when the version is too new
+- Prints the offending version and path
+- Uses environment variables for all configuration
+- Requires TENANT_ID for every single run
+- Requires JOURNAL_DIR to point at events
+- Requires LEDGER_DIR for the output files
+- Refuses to start with missing variables
+- Never writes a partial ledger file
+- Replays events in their original order
+- Keeps projections free of side effects
+- Verifies each ledger after writing it
+- Compares checksums against the journal index
+- Exits with code 2 on mismatch
+- Logs every decision to standard error
+- Supports JSON output for log shipping
+- Runs on Linux and macOS hosts
+- Builds with the stable Rust toolchain
+
+Compaction and retention are separate commands.
+Both need an explicit operator decision first.
+
+- Compaction copies live events into segments
+- Compaction replays the copy before swapping
+- Compaction keeps the old segment on mismatch
+- Compaction prints the first differing event
+- Retention keeps events inside the window
+- Retention needs an explicit cutoff date
+- Prune refuses unverified tenant ledgers
+- Prune removes segments older than cutoff
+- Prune writes a summary of removed events
+- Snapshots copy the whole journal directory
+- Snapshots use clonefile where it exists
+- Restores replace the journal from snapshots
+- Restores verify every ledger afterwards
+- Upgrades replace the binary in place
+- Upgrades keep the journal format unchanged
+- Downgrades are refused by the version check
+- Metrics expose event counts per tenant
+- Metrics expose replay duration per ledger
+- Health checks read the last journal offset
+- Alerts fire when replay falls behind
+
+Licensed under MIT.
+Issues go to the tracker.
+'''
+example_good = '''
+# foo
+
+foo turns an event journal into per-tenant ledgers. The reasoning for each
+choice lives in the paragraphs, and lists only hold things a reader copies.
+
+- `foo build`
+- `foo check`
+
+Build reads TENANT_ID, JOURNAL_DIR and LEDGER_DIR from the environment. Check
+exits 1 on schema drift, so run it in CI before a deploy.
+'''
+
+[[rule]]
+id = "rule-of-three-lists"
+name = "Repeated three-item lists"
+category = "lists"
+weight = 4
+kind = "rule_of_three"
+list_items = 3
+min_hits = 3
+min_ratio = 0.5
+score = "once"
+example_bad = '''
+Install needs three things.
+
+- Rust 1.80
+- OpenSSL headers
+- A writable journal directory
+
+The build has three stages.
+
+- Parse the journal
+- Project the ledgers
+- Verify the checksums
+
+Operators get three commands.
+
+- `foo build`
+- `foo check`
+- `foo prune`
+'''
+example_good = '''
+Prerequisites:
+
+- Rust 1.80
+- OpenSSL headers
+
+Commands:
+
+- `foo build`
+- `foo check`
+- `foo prune`
+- `foo compact`
+- `foo restore`
+
+Environment:
+
+- `TENANT_ID`
+- `JOURNAL_DIR`
+- `LEDGER_DIR`
+- `LOG_FORMAT`
+'''
+
+[[rule]]
+id = "uniform-fragment-list"
+name = "Uniform noun-phrase fragment list"
+category = "lists"
+weight = 3
+kind = "uniform_fragment_list"
+min_items = 4
+max_item_words = 6
+max_word_spread = 2
+example_bad = '''
+- Blazing fast performance
+- Robust error handling
+- Seamless integration
+- Intuitive developer experience
+'''
+example_good = '''
+- `foo build` writes the ledger to `./out`.
+- `foo check` exits 1 on schema drift.
+'''
+
+[[rule]]
+id = "em-dash-density"
+name = "Em dash density"
+category = "punctuation"
+weight = 4
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''\x{2014}'''
+min_hits = 3
+density_above = 1.0
+example_bad = '''
+Fast — and safe — and small — by default.
+'''
+example_good = '''
+Fast and safe by default; the binary is 300KB.
+'''
+
+[[rule]]
+id = "em-dash-parenthetical-pair"
+name = "Paired em-dash aside"
+category = "punctuation"
+weight = 3
+kind = "regex"
+lines = ["paragraph", "list_item", "quote"]
+text = "clean"
+pattern = '''\x{2014}[^\x{2014}.!?\n]{2,120}\x{2014}'''
+min_hits = 2
+example_bad = '''
+The cache &mdash; which is warm by default &mdash; saves time. The journal ― which is append-only ― stays.
+'''
+example_good = '''
+The cache is warm after the first run, which saves 1.7s. A full scan — about 40,000 events — takes a minute.
+'''
+
+[[rule]]
+id = "spaced-en-dash"
+name = "Spaced en dash or double hyphen used as a dash"
+category = "punctuation"
+weight = 3
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''[^\s|]\s+(?:\x{2013}|--)\s+[^\s|-]'''
+example_bad = '''
+Fast – and safe
+'''
+example_good = '''
+Pages 10–20 cover the tenant query.
+'''
+
+[[rule]]
+id = "duplicate-phrase-across-sections"
+name = "Phrase repeated across sections"
+category = "structure"
+weight = 3
+kind = "duplicate_shingles"
+pattern = '''[\p{L}\p{N}][\p{L}\p{N}'\x{2019}-]*'''
+shingle_size = 6
+max_stopwords = 3
+stopwords = ["a", "an", "the", "of", "to", "and", "or", "in", "on", "for", "is", "are", "be", "with", "by", "it", "this", "that"]
+min_hits = 2
+density_words = 1000.0
+density_above = 1.0
+score = "density_excess"
+example_bad = '''
+# foo
+
+foo is fast and reliable event sourcing for rust teams. Every event lands in one durable journal before any projection runs.
+
+## Features
+
+It gives you fast and reliable event sourcing for rust services.
+
+## Conclusion
+
+In short, foo is fast and reliable event sourcing for rust, and every event lands in one durable journal before anything else.
+'''
+example_good = '''
+# foo
+
+foo stores events in an append-only journal.
+
+## Features
+
+Queries are tenant-scoped and return in 40ms on 10k events.
+'''
+
+[[rule]]
+id = "horizontal-rule-decoration"
+name = "Decorative horizontal rules"
+category = "structure"
+weight = 3
+kind = "horizontal_rules"
+pattern = '''^\s{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$'''
+example_bad = '''
+Some text.
+
+---
+
+## Install
+'''
+example_good = '''
+Some text.
+
+## Install
+'''
+
+[[rule]]
+id = "staccato-fragment-triad"
+name = "Staccato fragment triad"
+category = "structure"
+weight = 5
+kind = "regex"
+lines = ["paragraph", "list_item", "quote", "heading"]
+text = "clean"
+pattern = '''(?:^|[\s>*_])(?:[A-Z][\p{L}'-]*(?:\s+[\p{L}'-]+){0,2}[.!]\s+){2,}[A-Z][\p{L}'-]*(?:\s+[\p{L}'-]+){0,2}(?:[.!](?:\s|$)|\s*$)'''
+example_bad = '''
+Fast. Simple. Effective
+'''
+example_good = '''
+It builds in 2.1s and needs no config file.
+'''
+
+[[rule]]
+id = "staccato-one-sentence-paragraphs"
+name = "Run of one-sentence paragraphs"
+category = "structure"
+weight = 3
+kind = "one_sentence_paragraphs"
+max_sentence_words = 8
+min_run = 4
+min_units = 8
+min_ratio = 0.5
+example_bad = '''
+Builds are slow.\
+That changes today.<br>
+Meet foo.
+
+It is fast.
+'''
+example_good = '''
+Cold builds took 3m36s because every gate compiled a different feature set. Unifying the fingerprint brought the first gate to 22s.
+
+To change the number of runs, use the `--runs` option:
+
+```bash
+hyperfine --runs 5 'sleep 0.3'
+```
+
+To export the results as JSON, pass the export flag:
+
+```bash
+hyperfine --export-json out.json 'sleep 0.3'
+```
+
+Set a warmup count when the cache matters.
+
+MIT.
+'''
+
+[[rule]]
+id = "toc-in-short-doc"
+name = "Table of contents in a short document"
+category = "structure"
+weight = 3
+kind = "toc_short_doc"
+pattern = '''(?i)^\s{0,3}#{1,6}\s+(?:[^\p{L}\p{N}\s]+\s*)?(?:table of contents|contents|toc)\s*#*\s*$|^\s*(?:[-*+]|\d{1,3}[.)])\s+\[[^\]]+\]\(#[^)\s]+\)\s*$'''
+min_run = 4
+short_prose_words = 1200
+short_headings = 8
+score = "once"
+example_bad = '''
+## Table of Contents
+- [Install](#install)
+- [Usage](#usage)
+- [License](#license)
+'''
+example_good = '''
+# foo
+
+## Install
+
+Run `cargo install foo`.
+
+## Usage
+
+Run `foo build` in the repository root.
+
+## License
+
+MIT.
+'''
+
+[[rule]]
+id = "table-bold-first-column"
+name = "Bold first column in a table"
+category = "tables"
+weight = 2
+kind = "table"
+pattern = '''^\s*\|\s*(?:\*\*[^*|\n]+\*\*|__[^_|\n]+__)\s*\|'''
+min_body_rows = 3
+min_ratio = 0.8
+example_bad = '''
+| Metric | Value |
+| --- | --- |
+| **Speed** | 2.1s |
+| **Size** | 300KB |
+| **Deps** | 12 |
+'''
+example_good = '''
+| Metric | Value |
+| --- | --- |
+| Speed | 2.1s |
+| Size | 300KB |
+'''
+
+[[rule]]
+id = "table-prose-cells"
+name = "Table used as a prose container"
+category = "tables"
+weight = 2
+kind = "table"
+pattern = '''\|[^|\n]*?(?:[\p{L}\p{N},'\x{2019}()-]+\s+){11,}[^|\n]*\.\s*\|'''
+max_columns = 3
+min_matches = 3
+example_bad = '''
+| Part | Behaviour |
+| --- | --- |
+| Cache | The cache is warmed on the first run and is reused by every later run on this machine. |
+| Journal | The journal is written once per run and is never edited after the run has finished. |
+| Ledger | The ledger is rebuilt from the journal whenever the projection code changes between two releases. |
+'''
+example_good = '''
+| Part | State |
+| --- | --- |
+| Cache | warm after first run |
+'''

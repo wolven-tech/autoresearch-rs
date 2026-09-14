@@ -1,0 +1,99 @@
+rules_dev = "rules/dev.toml"
+rules_holdout = "rules/holdout.toml"
+required_subcommands = ["init", "baseline", "run", "verify", "report"]
+holdout_ceiling = 0.0
+
+[substance]
+min_prose_words = 2800
+min_code_blocks = 8
+
+[known_binaries.autoresearch-web-evaluator]
+source = "crates/autoresearch-product-web/src/bin/autoresearch-web-evaluator.rs"
+argv = ["--route <route>", "--route <route> --manifest <path>"]
+
+[known_binaries.autoresearch-training-evaluator]
+source = "crates/autoresearch-training-candle/src/bin/autoresearch-training-evaluator.rs"
+argv = [""]
+
+[[limits]]
+id = "wcag"
+terms_any = ["WCAG"]
+claims_any = [
+  '(?i)\b(meets?|meeting|conforms?|conformant|conformance to|compliant|complies|certif(y|ies|ied)|guarantees?)\b[^.;:]*\bWCAG\b',
+  '(?i)\bWCAG\b[^.;:]*\b(conformant|compliant|certified|is met|are met|satisfied)\b',
+  '(?i)\bmeans?\b[^.;:]*\bmeets?\b[^.;:]*\bWCAG\b',
+]
+
+[[limits]]
+id = "rankings-and-citations"
+terms_any = ["ranking", "AI citation"]
+claims_any = [
+  '(?i)\b(tracks?|proves?|improves?|raises?|boosts?|guarantees?|earns?|wins?)\b[^.;:]*\b(rankings?|AI citations?)\b',
+]
+
+[[limits]]
+id = "customer-evidence"
+terms_any = ["customer demand", "bet gate", "promotion"]
+claims_any = [
+  '(?i)\b(proves?|stands? in for|substitutes? for|counts? as|replaces?)\b[^.;:]*\b(customer demand|market demand|customer evidence|promotion evidence)\b',
+  '(?i)\b(moves?|promotes?|advances?|opens?)\b[^.;:]*\bbet gates?\b',
+]
+
+[[limits]]
+id = "training-parity"
+terms_any = ["nanochat", "H100", "CUDA"]
+claims_any = [
+  '(?i)\b(reproduces?|matches|achieves?|reaches|equivalent to|parity with)\b[^.;:]*\b(nanochat|H100|CUDA)\b',
+]
+
+[[limits]]
+id = "process-isolation"
+terms_any = ["network isolation", "sandbox"]
+claims_any = [
+  '(?i)\b(every|each|all)\b[^.;:]*\b(runs?|executes?|is|are)\b[^.;:]*\b(sandbox(ed)?|isolated)\b',
+  '(?i)\bautoresearch(-rs)?\b[^.;:]*\b(sandboxes|isolates|confines)\b',
+]
+
+[[limits]]
+id = "no-external-side-effects"
+terms_any = ["deploy", "publish"]
+claims_any = [
+  '(?i)\b(autoresearch(-rs)?|the (cli|tool|runner|loop)|each keep|every keep|a keep)\b[^.;:]*\b(deploys?|publishes|pushes|ships)\b',
+]
+
+[[limits]]
+id = "not-autonomous"
+terms_any = ["autonomous"]
+claims_any = [
+  '(?i)\b(runs?|works?|operates?|iterates?|keeps going)\b[^.;:]*\bautonomous(ly)?\b',
+]
+
+[[use_cases]]
+id = "wasm-bundle-bytes"
+heading_any = ["bundle", "wasm", "bytes"]
+evidence_any = ["423,713", "510,535"]
+
+[[use_cases]]
+id = "accessibility-axe"
+heading_any = ["accessib", "wcag", "axe"]
+evidence_any = ["html-has-lang", "axe-core 4.10.2"]
+
+[[use_cases]]
+id = "integration-contract"
+heading_any = ["contract", "assert"]
+evidence_any = ["append failed: 400", "−71%", "-71%"]
+
+[[use_cases]]
+id = "seo-score"
+heading_any = ["seo"]
+evidence_any = ["52.4", "95.9"]
+
+[[use_cases]]
+id = "ui-defects"
+heading_any = ["defect", "layout", "timeline", "visual"]
+evidence_any = ["160.6px", "contrast-indeterminate"]
+
+[[use_cases]]
+id = "answer-engine-readiness"
+heading_any = ["geo", "answer engine", "retrieval", "ai answer"]
+evidence_any = ["83.00", "retrieval_readiness_score"]
