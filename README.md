@@ -73,6 +73,21 @@ Placeholders intentionally fail. Manifests omit external authority by
 default; they do not provide OS-level network isolation for arbitrary child
 processes. Lab metrics, traffic, and praise do not move product bet gates.
 
+## Claude skill
+
+[`skills/autoresearch`](skills/autoresearch/SKILL.md) teaches a Claude agent to run
+the loop through this CLI: contract, JSONL evaluator, one hypothesis per
+candidate, verify, report, and a committed write-up. Its
+[manifest and evaluator reference](skills/autoresearch/references/manifest.md)
+and [statistical guards](skills/autoresearch/references/guards.md) follow the
+code where it differs from `docs/`. For example, the CLI runs every
+evaluator as JSONL and enforces only `max_candidates`. Install it by
+linking the directory into your skills folder:
+
+```bash
+ln -s /absolute/path/to/autoresearch-rs/skills/autoresearch ~/.claude/skills/autoresearch
+```
+
 ## Clean-checkout verification
 
 With Rust toolchain and offline Cargo dependencies available, run from a
