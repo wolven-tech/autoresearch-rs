@@ -1,14 +1,14 @@
-# autoresearch-rs social launch draft
+# autoresearch-rs social launch
 
-Status: draft; not posted.
+Status: published on 2026-09-14.
+
+- [LinkedIn post](https://www.linkedin.com/feed/update/urn:li:activity:7505300232457539584/)
+- [X thread](https://x.com/ddonprogramming/status/2099564536881647944) (seven posts)
 
 Audience: developers and technical founders running product-web or small model
 experiments. Voice: personal founder account; concrete case first, no hype.
 
-Publish hold: local `main` at `d18855a` was 37 commits ahead of `origin/main`
-(`d158925`) when this draft was written. Push and verify public README/code
-before using the repository link in a live post. No public feature availability
-is inferred from this local checkout.
+Repository `main` was pushed and verified before the X thread was published.
 
 Visual for both posts: [3D experiment gate](../../assets/social/autoresearch-rs-experiment-gate-2026-09-14.png).
 Attach to LinkedIn post and first X post. This is concept art, not a benchmark
