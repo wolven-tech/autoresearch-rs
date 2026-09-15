@@ -19,8 +19,16 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Allow user namespaces for Chromium only
+        run: |
+          chromium_bin="$(readlink -f "$(command -v chromium)")"
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\n\nprofile chromium-ci "%s" flags=(unconfined) {\n  userns,\n}\n' "$chromium_bin" | sudo tee /etc/apparmor.d/chromium-ci
+          sudo apparmor_parser -r /etc/apparmor.d/chromium-ci
+      - name: Chromium smoke
+        timeout-minutes: 1
+        run: chromium --headless=new --disable-gpu --no-first-run --dump-dom about:blank
       - name: Test
-        run: cargo test --workspace --all-features
+        run: cargo test --workspace --all-features --no-fail-fast
       - name: Documentation
         env:
           RUSTDOCFLAGS: -D warnings
