@@ -48,7 +48,7 @@ impl RunLockOwner {
 /// Exclusive repository ownership held until guard drops or process exits.
 #[derive(Debug)]
 pub struct RunLockGuard {
-    _file: File,
+    file: File,
     path: PathBuf,
     owner: RunLockOwner,
 }
@@ -111,7 +111,7 @@ impl RunLockGuard {
         };
         write_owner(&mut file, &lock_path, &owner)?;
         Ok(Self {
-            _file: file,
+            file,
             path: lock_path,
             owner,
         })
@@ -127,6 +127,14 @@ impl RunLockGuard {
     #[must_use]
     pub const fn owner(&self) -> &RunLockOwner {
         &self.owner
+    }
+}
+
+impl Drop for RunLockGuard {
+    fn drop(&mut self) {
+        // A child forked by another thread shares this open file until it execs,
+        // so closing the handle alone can leave the flock held.
+        let _ = self.file.unlock();
     }
 }
 
