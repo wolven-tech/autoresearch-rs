@@ -56,6 +56,8 @@ The run was stopped with `stop` once the objective reached zero, since no candid
 
 Commit `1ff2071` landed upstream while the runs were in progress. It adds [skills/autoresearch](../../skills/autoresearch/SKILL.md) and a README section about it. The kept README was rebased onto that commit by hand, and the skill section was folded into "Driving it from an agent" as a `### The Claude skill` subsection. That edit was scored outside a run, so it is a check and not a loop decision: all 8 slop-contract gates pass, dev slop is 0, holdout slop is 0, with 4,094 prose words and 15 code blocks.
 
+A second pass added attribution, a LICENSE and NOTICE, a lane table and reader paths in the opening, a mermaid loop diagram, a Status section, and three badges (CI, license, Rust toolchain). The badges went in only after CI on `main` was green again, and every badge URL was fetched and returned an SVG. That pass was also scored outside a run: all 8 gates pass, dev and holdout slop are both 0, with 4,354 prose words and 16 code blocks.
+
 ## What is still open
 
 The residual cases of `limits_preserved` are semantic. It catches the overclaim forms in its patterns and seven known lies, but a contradiction worded outside those patterns can still pass while the limit is stated elsewhere. The final README was fact-checked by an agent for this reason, and that check is not part of the frozen evaluator.

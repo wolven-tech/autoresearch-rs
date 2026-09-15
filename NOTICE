@@ -1,0 +1,21 @@
+autoresearch-rs
+Copyright (c) 2026 Wolven Tech
+
+Everything in this repository is licensed under the MIT License in LICENSE,
+except the upstream files listed below.
+
+reference/python/
+  Ten files copied unmodified from https://github.com/karpathy/autoresearch
+  at commit 228791fb499afffb54b46200aca536f79142f117: .gitignore,
+  .python-version, README.md, analysis.ipynb, prepare.py, program.md,
+  progress.png, pyproject.toml, train.py and uv.lock. LICENSE does not cover
+  them. The upstream repository has no license file; the "License" section
+  of its README, preserved as reference/python/README.md, reads "MIT". These
+  files remain under whatever terms their authors granted, and this
+  repository grants no additional rights to them.
+  reference/python/MANIFEST.md is not an upstream file and is covered by
+  LICENSE.
+
+  reference/python/train.py describes itself as "Cherry-picked and simplified
+  from nanochat". https://github.com/karpathy/nanochat ships an MIT license
+  file reading "Copyright (c) 2025 Andrej Karpathy".

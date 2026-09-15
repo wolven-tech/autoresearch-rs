@@ -2,6 +2,12 @@
 
 autoresearch-rs freezes an experiment contract, measures a baseline at an exact commit, and then advances one candidate per call: it commits one change in an isolated Git worktree, runs your evaluators on that commit, discards the candidate if any hard gate failed, keeps it if the objective beats the current best, settles an exact tie on the size of the diff, and journals the decision.
 
+It is a pre-merge experiment runner for a number you already own, such as bundle bytes, open axe nodes or a rubric score. You get a reason code for every keep and discard, a local branch `autoresearch/<run-id>` that moves only when a candidate is kept, and a `verify` that reruns your evaluators at the kept commit before you merge that branch yourself. You write the evaluator that produces the number. It is not A/B testing on live traffic, and version 0.1.0 builds from source, with no prebuilt binaries and no registry release.
+
+[![CI](https://github.com/wolven-tech/autoresearch-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wolven-tech/autoresearch-rs/actions/workflows/ci.yml?query=branch%3Amain)
+[![License: MIT](https://img.shields.io/github/license/wolven-tech/autoresearch-rs)](LICENSE)
+[![Rust toolchain](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwolven-tech%2Fautoresearch-rs%2Fmain%2Frust-toolchain.toml&query=%24.toolchain.channel&label=rust%20toolchain&color=orange)](rust-toolchain.toml)
+
 Two rejected rows from a real ledger, from a UI loop on a Dioxus web app's timeline screen, where a weighted count over nine defect types read 29 at baseline:
 
 ```text
@@ -11,13 +17,24 @@ Two rejected rows from a real ledger, from a UI loop on a Dioxus web app's timel
 
 Both candidates cut the count from 29, one to 15 and one to 10, and both were rejected because each left a named defect. Under autoresearch-rs, that defect becomes a hard gate, and a failed gate is read before the number.
 
-I maintain this fork, and that ledger, like every ledger in this README, came from my own loops, run with the same contract by hand or by an agent following my autoresearch skill. None of them ran through this CLI, which was published on 2026-09-14. autoresearch-rs automates the contract those loops followed: a frozen manifest and program, an isolated worktree per candidate, exact-commit evaluation, gates before the objective, a journal you can recover from, and then verify, report and export.
+autoresearch-rs is a Rust fork of Andrej Karpathy's [autoresearch](https://github.com/karpathy/autoresearch), and the upstream Python files are kept unmodified in [reference/python](reference/python/README.md). I'm Decebal Dobrica, and I maintain this fork at Wolven Tech. Those two rows, like every ledger row in this README, came from my own loops, run with the same contract by hand or by an agent following my autoresearch skill. None of them ran through this CLI, which was published on 2026-09-14 and automates the contract those loops followed.
 
-It is a pre-merge experiment runner for a number you already own, such as bundle bytes, open axe nodes or a rubric score. It is not A/B testing on live traffic, and it does not ship the scorer for your number. Version 0.1.0 builds from source, with no prebuilt binaries and no registry release. It is a Rust fork of [karpathy/autoresearch](https://github.com/karpathy/autoresearch); the upstream Python files are kept in [reference/python](reference/python/README.md).
+Six of those loops have a recipe below, one per product surface, and each lane name links to it:
+
+| Lane | Scalar | Better | Baseline | Best |
+| --- | --- | --- | --- | --- |
+| [WASM bundle](#bundle-bytes-wasm-size-while-adding-components) | release wasm bytes | lower | 510,535 B | 423,713 B |
+| [Accessibility](#accessibility-axe-violations-plus-unresolved-contrast) | axe violations plus unresolved contrast | lower | 5 | 0 |
+| [Integration contract](#integration-contract-behaviours-nobody-asserts) | unasserted behaviours | lower | 21 | 6 |
+| [SEO](#seo-score-on-one-long-post) | `seo_score` on a local scorer | higher | 52.4 | 95.9 |
+| [UI defects](#ui-defects-on-an-app-timeline-screen) | weighted defect count | lower | 29 | 0 |
+| [Answer-engine readiness](#answer-engine-readiness-geo) | `retrieval_readiness_score` | higher | 5.00 | 100.00 |
+
+To see whether it fits a number you own, read [recipes by product surface](#recipes-by-product-surface) and [what it does not prove or do](#what-it-does-not-prove-or-do). To set it up, start at [install and run one loop](#install-and-run-one-loop) and [the evaluator you still have to write](#the-evaluator-you-still-have-to-write). To hand it to Claude Code or Codex, go to [driving it from an agent](#driving-it-from-an-agent).
 
 ## A higher score discarded by the real CLI
 
-The lanes further down are hand-run. This one is not. The test `disposable_product_web_loop_keeps_improvement_discards_failed_gate_and_recovers` in [the CLI test suite](apps/autoresearch-cli/tests/cli.rs) drives the compiled `autoresearch` binary through init, baseline, run, resume, verify, report and export against a repository whose only mutable path is `site/index.html`. Its evaluator counts `<p>` elements and checks that the `Start` link survives. The count stands in for page quality and proves nothing about it, which is fine, because the decision is what is under test:
+The lanes in the table above, and their recipes further down, are hand-run. This one is not. The test `disposable_product_web_loop_keeps_improvement_discards_failed_gate_and_recovers` in [the CLI test suite](apps/autoresearch-cli/tests/cli.rs) drives the compiled `autoresearch` binary through init, baseline, run, resume, verify, report and export against a repository whose only mutable path is `site/index.html`. Its evaluator counts `<p>` elements and checks that the `Start` link survives. The count stands in for page quality and proves nothing about it, which is fine, because the decision is what is under test:
 
 | Evaluation | Change to `site/index.html` | `fixture_content_items` | `cta_present` | Decision |
 | --- | --- | --- | --- | --- |
@@ -36,6 +53,27 @@ The test then asserts that `refs/heads/autoresearch/<run-id>` still points at ca
 ## Who writes which file
 
 The tool owns the loop. You own the definition of better, and you own the program that measures it.
+
+```mermaid
+flowchart TD
+    contract["you commit autoresearch.toml and program.md"] --> base["baseline: freeze the contract and evaluate the base commit"]
+    base --> cand["run: open a candidate worktree"]
+    cand --> edit["you or an agent edit files under mutable_paths"]
+    edit --> submit["run: commit the edit and run your evaluators"]
+    submit --> gates{"every hard gate passed?"}
+    gates -- no --> discard["discard"]
+    gates -- yes --> compare{"objective against the current best, compared exactly"}
+    compare -- better --> keep["keep"]
+    compare -- worse --> discard
+    compare -- tie --> tiebreak{"fewer changed lines, or equal lines and faster?"}
+    tiebreak -- yes --> keep
+    tiebreak -- no --> discard
+    keep --> journal["journal the decision, then apply it in Git"]
+    discard --> journal
+    journal -- next run call --> cand
+    journal -- when you are done --> check["verify, report, export"]
+    check --> merge["you merge autoresearch/#lt;run-id#gt;"]
+```
 
 | File or ref | Written by | What happens to it |
 | --- | --- | --- |
@@ -187,15 +225,6 @@ Two things in the manifest look like controls and are not enforced by the CLI. `
 ## Recipes by product surface
 
 Each recipe is one of my loops, laid out as the pieces you would copy: the frozen corpus, the scalar, the gate, the real ledger rows, and the line between what autoresearch-rs covers today and what you write. The bundle recipe also writes its contract as a manifest fragment that replaces `[experiment.objective]`, `[scope]` and the evaluator tables in the full manifest above. Its paths, gate identifiers and evaluator name are invented for illustration; the corpus, the gate conditions and the numbers come from the ledger, and the other recipes translate the same way.
-
-| Lane | Scalar | Better | Baseline | Best |
-| --- | --- | --- | --- | --- |
-| WASM bundle | release wasm bytes | lower | 510,535 B | 423,713 B |
-| Accessibility | axe violations plus unresolved contrast | lower | 5 | 0 |
-| Integration contract | unasserted behaviours | lower | 21 | 6 |
-| SEO | `seo_score` on a local scorer | higher | 52.4 | 95.9 |
-| UI defects | weighted defect count | lower | 29 | 0 |
-| Answer-engine readiness | `retrieval_readiness_score` | higher | 5.00 | 100.00 |
 
 ### Bundle bytes: WASM size while adding components
 
@@ -361,6 +390,16 @@ autoresearch --repository /path/to/product run --run-id "$RUN_ID" --mode command
 
 It needs `--hypothesis`, an absolute `agent.program` that canonicalizes to the same file as `--allow-executable`, and an empty `authority.allow`. The agent receives a JSON `MutationRequest` on stdin, runs with its environment cleared except `LANG=C` and `TZ=UTC`, has its stdout and stderr discarded apart from byte counts, and must exit 0 with its edits left uncommitted. A command-mode agent therefore gets no credentials, no HOME and no PATH, so a hosted model CLI needs a wrapper binary that sets them, and a manifest that declares network authority cannot use command mode at all. The fragments in [examples/agents](examples/agents/README.md) show the process contract only.
 
+## Status
+
+The workspace is at version 0.1.0, with no Git tags yet. CI runs on every push and pull request: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, a Chromium launch check, `cargo test --workspace --all-features --no-fail-fast`, and `cargo doc --workspace --all-features --no-deps` with `RUSTDOCFLAGS=-D warnings`. Run the four cargo commands before you send a change. Six of the browser tests in `crates/autoresearch-product-web/tests/browser.rs` return without asserting anything when they find no Chromium, so set `CHROMIUM_PATH` or put `chromium` on PATH before trusting a green run of the product-web crate. On Ubuntu 24.04, Chromium's sandbox also needs unprivileged user namespaces, which [the CI workflow](.github/workflows/ci.yml) grants to the Chromium binary alone through an AppArmor profile.
+
 ## Where this came from
 
-The loop of modify, measure, keep or discard, and the `program.md` contract, come from Andrej Karpathy's [karpathy/autoresearch](https://github.com/karpathy/autoresearch). This repository ports that idea to Rust and hardens it with frozen inputs and Git isolation. The upstream Python files are preserved in [reference/python](reference/python/README.md), with the pinned upstream commit and blob IDs in [reference/python/MANIFEST.md](reference/python/MANIFEST.md). The Rust workspace declares the MIT license in its Cargo manifest, and its rewrite is being tracked in [this README's own ledger](docs/ledger/readme-autoresearch.md).
+The loop of modify, measure, keep or discard, and the `program.md` contract, come from Andrej Karpathy's [karpathy/autoresearch](https://github.com/karpathy/autoresearch). This repository ports that idea to Rust and hardens it with frozen inputs and Git isolation. The upstream Python files are preserved in [reference/python](reference/python/README.md), with the pinned upstream commit and blob IDs in [reference/python/MANIFEST.md](reference/python/MANIFEST.md).
+
+I announced the fork on [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7505300232457539584/) and [X](https://x.com/ddonprogramming/status/2099564536881647944) on 2026-09-14. How this README was rewritten and scored is recorded in [its ledger](docs/ledger/readme-autoresearch.md).
+
+## License
+
+Everything in this repository except the ten upstream files in `reference/python` is under the MIT license in [LICENSE](LICENSE), which matches the `license` field in the Cargo manifests. Upstream has no license file of its own, and its README ends with a License section reading "MIT"; [NOTICE](NOTICE) records that boundary, and this repository grants no new rights to those files.

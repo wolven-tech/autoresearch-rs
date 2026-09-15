@@ -7,6 +7,13 @@ Original README attributes the project to Andrej Karpathy and labels its
 license “MIT”. That pinned tree has no standalone `LICENSE` file; this manifest
 records the upstream statement, not a new legal conclusion or license grant.
 
+`train.py` describes itself as “Cherry-picked and simplified from nanochat”.
+[karpathy/nanochat](https://github.com/karpathy/nanochat) ships an MIT
+`LICENSE` reading “Copyright (c) 2025 Andrej Karpathy”; that file is not part
+of the pinned upstream tree and is not copied here. The repository root
+`LICENSE` does not cover the ten files below, and the root `NOTICE` records
+that boundary.
+
 All ten upstream files below retain their exact Git blob IDs. The root Rust
 README is new; `reference/python/README.md` is the original upstream README.
 
