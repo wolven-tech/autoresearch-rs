@@ -1,0 +1,37 @@
+schema_version = 1
+
+[experiment]
+name = "first loop"
+
+[experiment.objective]
+name = "paragraph_count"
+direction = "minimize"
+
+[experiment.budget]
+max_candidates = 5
+max_failures = 2
+wall_clock_seconds = 600
+
+[scope]
+mutable_paths = ["site"]
+
+[agent]
+program = "/usr/bin/git"
+args = ["status", "--short"]
+timeout_seconds = 30
+
+[[evaluators]]
+id = "content_quality"
+hard_gates = ["cta_present"]
+
+[evaluators.command]
+program = "/ABSOLUTE/PATH/TO/first-loop-evaluator"
+timeout_seconds = 10
+
+[[evaluators.metrics]]
+name = "paragraph_count"
+kind = "objective"
+direction = "minimize"
+
+[authority]
+allow = []

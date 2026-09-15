@@ -6,9 +6,9 @@ writes exactly one UTF-8 JSON object followed by `\n` to stdout. Logs and
 diagnostics go to stderr. Additional stdout lines, partial records, invalid
 UTF-8, missing/unknown fields, and unsupported versions fail closed.
 
-Golden records: [`request-v1.jsonl`](../crates/autoresearch-evaluator/tests/fixtures/request-v1.jsonl),
-[`response-success-v1.jsonl`](../crates/autoresearch-evaluator/tests/fixtures/response-success-v1.jsonl),
-and [`response-failure-v1.jsonl`](../crates/autoresearch-evaluator/tests/fixtures/response-failure-v1.jsonl).
+Golden records: [`request-v1.jsonl`](../../crates/autoresearch-evaluator/tests/fixtures/request-v1.jsonl),
+[`response-success-v1.jsonl`](../../crates/autoresearch-evaluator/tests/fixtures/response-success-v1.jsonl),
+and [`response-failure-v1.jsonl`](../../crates/autoresearch-evaluator/tests/fixtures/response-failure-v1.jsonl).
 
 ## Request fields
 

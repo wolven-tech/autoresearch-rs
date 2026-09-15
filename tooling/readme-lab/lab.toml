@@ -1,11 +1,14 @@
 rules_dev = "rules/dev.toml"
 rules_holdout = "rules/holdout.toml"
 required_subcommands = ["init", "baseline", "run", "verify", "report"]
+required_subcommands_page = "docs/tutorials/first-loop.md"
+use_cases_page = "docs/explanation/case-studies.md"
+limits_page = "docs/explanation/limits.md"
 holdout_ceiling = 0.0
 
 [substance]
-min_prose_words = 2800
-min_code_blocks = 8
+min_prose_words = 150
+min_code_blocks = 0
 
 [known_binaries.autoresearch-web-evaluator]
 source = "crates/autoresearch-product-web/src/bin/autoresearch-web-evaluator.rs"

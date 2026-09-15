@@ -10,7 +10,7 @@ experiments. Voice: personal founder account; concrete case first, no hype.
 
 Repository `main` was pushed and verified before the X thread was published.
 
-Visual for both posts: [3D experiment gate](../../assets/social/autoresearch-rs-experiment-gate-2026-09-14.png).
+Visual for both posts: [3D experiment gate](../../../assets/social/autoresearch-rs-experiment-gate-2026-09-14.png).
 Attach to LinkedIn post and first X post. This is concept art, not a benchmark
 or screenshot.
 
@@ -97,15 +97,15 @@ What gate is missing from your current experiment loop?
 
 ## Claim checks
 
-- [README](../../README.md): frozen contracts, worktrees, exact commits,
+- [README](../../../README.md): frozen contracts, worktrees, exact commits,
   recovery, reports, and explicit limits.
-- [Product-web fixture](../../examples/product-web/README.md): local browser,
+- [Product-web fixture](../../../examples/product-web/README.md): local browser,
   accessibility, SEO/GEO, and synthetic Lighthouse import boundaries.
-- [Training parity](../training-parity.md): exact tiny-fixture scope and known
+- [Training parity](../../reference/training-parity.md): exact tiny-fixture scope and known
   discrepancy; no full nanochat or hardware parity claim.
-- [Portfolio packs](../../examples/portfolio/README.md): templates, not live
+- [Portfolio packs](../../../examples/portfolio/README.md): templates, not live
   product runs or commercial evidence.
-- [Evidence board](../evidence-board.md): report content and redacted export.
+- [Evidence board](../../reference/report-and-export.md): report content and redacted export.
 
 ## Art provenance
 

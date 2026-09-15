@@ -176,7 +176,7 @@ Exactly one newline-terminated JSON line; logs go to stderr.
   "reported","detail":"…"}}}`. Both fields are required and `reported` is the only class an
   evaluator may send; anything else is recorded as `protocol`.
 
-Full protocol: `docs/evaluator-protocol.md` in autoresearch-rs (where it disagrees with this file
+Full protocol: `docs/reference/evaluator-protocol.md` in autoresearch-rs (where it disagrees with this file
 about adapters, the code wins).
 
 ## A known-good evaluator to start from

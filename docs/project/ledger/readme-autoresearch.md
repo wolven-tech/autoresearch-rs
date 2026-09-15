@@ -1,6 +1,6 @@
 # README autoresearch ledger
 
-The README was rewritten for product engineers and then reduced in formatting slop through two autoresearch-rs runs, scored by the `readme-lab` evaluator in [tooling/readme-lab](../../tooling/readme-lab). Both kept commits were re-verified with `verify`, and both reported `matched`.
+The README was rewritten for product engineers and then reduced in formatting slop through two autoresearch-rs runs, scored by the `readme-lab` evaluator in [tooling/readme-lab](../../../tooling/readme-lab). Both kept commits were re-verified with `verify`, and both reported `matched`.
 
 | Measure | Original README | After run A | After run B |
 | --- | --- | --- | --- |
@@ -24,7 +24,7 @@ The evaluator speaks the JSONL protocol and has two contracts:
 | `coverage` (run A) | `uncovered_use_cases`, minimize | `links_resolve`, `cli_invocations_parse`, `code_blocks_parse`, `limits_preserved`, `markdown_well_formed` |
 | `slop` (run B) | `slop_points` from `rules/dev.toml`, minimize | the five above plus `use_cases_covered`, `substance_floor` (at least 2,800 prose words and 8 code blocks), `holdout_not_regressed` (holdout points at most 0) |
 
-`cli_invocations_parse` parses every shell example with the real `autoresearch` clap definition, and `code_blocks_parse` validates every manifest block with the real `ValidatedManifest` parser. `limits_preserved` requires seven stated limits (WCAG, rankings and citations, customer evidence, training parity, process isolation, no deploy or publish, not autonomous) and rejects clause-level overclaims of them.
+`cli_invocations_parse` parses every shell example with the real `autoresearch` clap definition, and `code_blocks_parse` validates every manifest block with the real `ValidatedManifest` parser. `limits_preserved` requires the seven claim boundaries listed in [the limits page](../../explanation/limits.md) to stay stated, and rejects clause-level overclaims of them on any page.
 
 The slop rules come from a catalog of 68 formatting patterns. They were split deterministically: within each category, ids are sorted and every third one goes to `rules/holdout.toml`, which the proposer never read. Each rule carries an `example_bad` and an `example_good`, and `readme-lab selftest` checks that it fires on the first and stays silent on the second.
 
@@ -54,9 +54,21 @@ The run was stopped with `stop` once the objective reached zero, since no candid
 
 ## After the runs
 
-Commit `1ff2071` landed upstream while the runs were in progress. It adds [skills/autoresearch](../../skills/autoresearch/SKILL.md) and a README section about it. The kept README was rebased onto that commit by hand, and the skill section was folded into "Driving it from an agent" as a `### The Claude skill` subsection. That edit was scored outside a run, so it is a check and not a loop decision: all 8 slop-contract gates pass, dev slop is 0, holdout slop is 0, with 4,094 prose words and 15 code blocks.
+Commit `1ff2071` landed upstream while the runs were in progress. It adds [skills/autoresearch](../../../skills/autoresearch/SKILL.md) and a README section about it. The kept README was rebased onto that commit by hand, and the skill section was folded into "Driving it from an agent" as a `### The Claude skill` subsection. That edit was scored outside a run, so it is a check and not a loop decision: all 8 slop-contract gates pass, dev slop is 0, holdout slop is 0, with 4,094 prose words and 15 code blocks.
 
 A second pass added attribution, a LICENSE and NOTICE, a lane table and reader paths in the opening, a mermaid loop diagram, a Status section, and three badges (CI, license, Rust toolchain). The badges went in only after CI on `main` was green again, and every badge URL was fetched and returned an SVG. That pass was also scored outside a run: all 8 gates pass, dev and holdout slop are both 0, with 4,354 prose words and 16 code blocks.
+
+## The docs split
+
+The owner then changed the requirement: the README should carry one idea and one visual, and everything else belongs in focused pages. That decision supersedes the contract run B optimized, so the work below was measured but not run as a loop.
+
+The README fell from 4,354 prose words to 205: the discard that opens it, the concept art from the launch, and links into the documentation. `docs/` now follows a Diataxis split, with one page per mode and dated project records kept out of the reader modes. Existing pages moved with `git mv`, and the three gates written for a single README are now owed by the page that carries that content: the tutorial owes the CLI examples, the case studies owe the six lanes, and the limits page owes the seven claim boundaries.
+
+Two evaluator changes made that measurable. Links now resolve relative to the file being scored rather than the repository root, which is what a docs tree needs, and `lab.toml` names the page that owes each page-scoped gate. Both are in [tooling/readme-lab](../../../tooling/readme-lab).
+
+Every published page scores 0 dev slop and 0 holdout slop with its gates passing, except `evaluator-protocol.md` and `training-parity.md`, which predate this work: they were moved and relinked, not rewritten, and their article-dropped style still registers as telegraphic.
+
+The tutorial was run end to end in a throwaway repository before it was written, and its text comes from that transcript: baseline at `paragraph_count` 2, one candidate kept at 1 with `primary_improvement`, one candidate discarded at 0 with `failed_hard_gates` naming `cta_present`, then `verify` reporting `matched`. The second candidate scored better than the kept one and was discarded anyway, which is the same behaviour the README opens on.
 
 ## What is still open
 

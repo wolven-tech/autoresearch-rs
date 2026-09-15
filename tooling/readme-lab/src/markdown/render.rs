@@ -2,7 +2,9 @@
 //!
 //! Line count and numbering never change, so hits still point at source lines.
 
-use super::{Document, HTML_TAG, INLINE_COMMENT, LineKind, backtick_run, build, closing_run, opens_fence};
+use super::{
+    Document, HTML_TAG, INLINE_COMMENT, LineKind, backtick_run, build, closing_run, opens_fence,
+};
 use regex::{Captures, Regex};
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -22,9 +24,8 @@ static HEADING_CLOSE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^</h[1-6]\s*>$").expect("static regex"));
 static LIST_ITEM_TAG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^<li\b[^>]*>").expect("static regex"));
-static SUMMARY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)<summary\b[^>]*>(.*?)</summary\s*>").expect("static regex")
-});
+static SUMMARY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)<summary\b[^>]*>(.*?)</summary\s*>").expect("static regex"));
 static EMPHASIS_TAG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)</?(?:b|strong|i|em)\b[^>]*>").expect("static regex"));
 static BOLD_TAG: LazyLock<Regex> =
@@ -54,8 +55,10 @@ static TEXT_PICTOGRAPH: LazyLock<Regex> = LazyLock::new(|| {
     .expect("static regex")
 });
 static REFERENCE_DEFINITION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^\s{0,3}\[([^\]\n]+)\]:\s*<?([^\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$"#)
-        .expect("static regex")
+    Regex::new(
+        r#"^\s{0,3}\[([^\]\n]+)\]:\s*<?([^\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$"#,
+    )
+    .expect("static regex")
 });
 static REFERENCE_USE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(!?)\[([^\]\n]*)\]\[([^\]\n]*)\]").expect("static regex"));
@@ -66,43 +69,111 @@ static BADGE_URL: LazyLock<Regex> = LazyLock::new(|| {
 
 /// Emoji shortcodes GitHub renders, mapped to one representative code point each.
 const SHORTCODES: &[(&str, &str)] = &[
-    ("+1", "\u{1F44D}"), ("-1", "\u{1F44E}"), ("100", "\u{1F4AF}"), ("art", "\u{1F3A8}"),
-    ("bar_chart", "\u{1F4CA}"), ("beetle", "\u{1FAB2}"), ("bell", "\u{1F514}"),
-    ("bookmark", "\u{1F516}"), ("books", "\u{1F4DA}"), ("book", "\u{1F4D6}"),
-    ("boom", "\u{1F4A5}"), ("brain", "\u{1F9E0}"), ("bug", "\u{1F41B}"), ("bulb", "\u{1F4A1}"),
-    ("calendar", "\u{1F4C6}"), ("chart_with_upwards_trend", "\u{1F4C8}"),
-    ("checkered_flag", "\u{1F3C1}"), ("clap", "\u{1F44F}"), ("clipboard", "\u{1F4CB}"),
-    ("coffee", "\u{2615}"), ("compass", "\u{1F9ED}"), ("computer", "\u{1F4BB}"),
-    ("confetti_ball", "\u{1F38A}"), ("construction", "\u{1F6A7}"), ("crab", "\u{1F980}"),
-    ("crystal_ball", "\u{1F52E}"), ("dart", "\u{1F3AF}"), ("dizzy", "\u{1F4AB}"),
-    ("electric_plug", "\u{1F50C}"), ("exclamation", "\u{2757}"), ("eyes", "\u{1F440}"),
-    ("fast_forward", "\u{23E9}"), ("file_folder", "\u{1F4C1}"), ("fire", "\u{1F525}"),
-    ("floppy_disk", "\u{1F4BE}"), ("gear", "\u{2699}\u{FE0F}"), ("gem", "\u{1F48E}"),
-    ("gift", "\u{1F381}"), ("globe_with_meridians", "\u{1F310}"), ("hammer", "\u{1F528}"),
-    ("handshake", "\u{1F91D}"), ("heart", "\u{2764}\u{FE0F}"),
-    ("heavy_check_mark", "\u{2714}\u{FE0F}"), ("hourglass", "\u{231B}"),
-    ("information_source", "\u{2139}\u{FE0F}"), ("jigsaw", "\u{1F9E9}"), ("key", "\u{1F511}"),
-    ("label", "\u{1F3F7}\u{FE0F}"), ("large_blue_circle", "\u{1F535}"),
-    ("light_bulb", "\u{1F4A1}"), ("link", "\u{1F517}"), ("lock", "\u{1F512}"),
-    ("loudspeaker", "\u{1F4E2}"), ("mag", "\u{1F50D}"), ("magic_wand", "\u{1FA84}"),
-    ("mega", "\u{1F4E3}"), ("memo", "\u{1F4DD}"), ("microscope", "\u{1F52C}"),
-    ("muscle", "\u{1F4AA}"), ("new", "\u{1F195}"), ("no_entry", "\u{26D4}"),
-    ("ok_hand", "\u{1F44C}"), ("one", "\u{0031}\u{FE0F}\u{20E3}"),
-    ("open_file_folder", "\u{1F4C2}"), ("package", "\u{1F4E6}"), ("pencil", "\u{1F4DD}"),
-    ("pencil2", "\u{270F}\u{FE0F}"), ("point_down", "\u{1F447}"), ("point_right", "\u{1F449}"),
-    ("pushpin", "\u{1F4CC}"), ("question", "\u{2753}"), ("rainbow", "\u{1F308}"),
-    ("raised_hands", "\u{1F64C}"), ("recycle", "\u{267B}\u{FE0F}"), ("red_circle", "\u{1F534}"),
-    ("repeat", "\u{1F501}"), ("robot", "\u{1F916}"), ("rocket", "\u{1F680}"),
-    ("rotating_light", "\u{1F6A8}"), ("round_pushpin", "\u{1F4CD}"),
-    ("satellite", "\u{1F4E1}"), ("seedling", "\u{1F331}"), ("shield", "\u{1F6E1}\u{FE0F}"),
-    ("smile", "\u{1F604}"), ("sparkle", "\u{2747}\u{FE0F}"), ("sparkles", "\u{2728}"),
-    ("speech_balloon", "\u{1F4AC}"), ("star", "\u{2B50}"), ("star2", "\u{1F31F}"),
-    ("stars", "\u{1F320}"), ("stopwatch", "\u{23F1}\u{FE0F}"), ("sunglasses", "\u{1F60E}"),
-    ("tada", "\u{1F389}"), ("test_tube", "\u{1F9EA}"), ("thumbsup", "\u{1F44D}"),
-    ("three", "\u{0033}\u{FE0F}\u{20E3}"), ("toolbox", "\u{1F9F0}"), ("trophy", "\u{1F3C6}"),
-    ("two", "\u{0032}\u{FE0F}\u{20E3}"), ("unlock", "\u{1F513}"),
-    ("warning", "\u{26A0}\u{FE0F}"), ("wave", "\u{1F44B}"),
-    ("white_check_mark", "\u{2705}"), ("wrench", "\u{1F527}"), ("x", "\u{274C}"),
+    ("+1", "\u{1F44D}"),
+    ("-1", "\u{1F44E}"),
+    ("100", "\u{1F4AF}"),
+    ("art", "\u{1F3A8}"),
+    ("bar_chart", "\u{1F4CA}"),
+    ("beetle", "\u{1FAB2}"),
+    ("bell", "\u{1F514}"),
+    ("bookmark", "\u{1F516}"),
+    ("books", "\u{1F4DA}"),
+    ("book", "\u{1F4D6}"),
+    ("boom", "\u{1F4A5}"),
+    ("brain", "\u{1F9E0}"),
+    ("bug", "\u{1F41B}"),
+    ("bulb", "\u{1F4A1}"),
+    ("calendar", "\u{1F4C6}"),
+    ("chart_with_upwards_trend", "\u{1F4C8}"),
+    ("checkered_flag", "\u{1F3C1}"),
+    ("clap", "\u{1F44F}"),
+    ("clipboard", "\u{1F4CB}"),
+    ("coffee", "\u{2615}"),
+    ("compass", "\u{1F9ED}"),
+    ("computer", "\u{1F4BB}"),
+    ("confetti_ball", "\u{1F38A}"),
+    ("construction", "\u{1F6A7}"),
+    ("crab", "\u{1F980}"),
+    ("crystal_ball", "\u{1F52E}"),
+    ("dart", "\u{1F3AF}"),
+    ("dizzy", "\u{1F4AB}"),
+    ("electric_plug", "\u{1F50C}"),
+    ("exclamation", "\u{2757}"),
+    ("eyes", "\u{1F440}"),
+    ("fast_forward", "\u{23E9}"),
+    ("file_folder", "\u{1F4C1}"),
+    ("fire", "\u{1F525}"),
+    ("floppy_disk", "\u{1F4BE}"),
+    ("gear", "\u{2699}\u{FE0F}"),
+    ("gem", "\u{1F48E}"),
+    ("gift", "\u{1F381}"),
+    ("globe_with_meridians", "\u{1F310}"),
+    ("hammer", "\u{1F528}"),
+    ("handshake", "\u{1F91D}"),
+    ("heart", "\u{2764}\u{FE0F}"),
+    ("heavy_check_mark", "\u{2714}\u{FE0F}"),
+    ("hourglass", "\u{231B}"),
+    ("information_source", "\u{2139}\u{FE0F}"),
+    ("jigsaw", "\u{1F9E9}"),
+    ("key", "\u{1F511}"),
+    ("label", "\u{1F3F7}\u{FE0F}"),
+    ("large_blue_circle", "\u{1F535}"),
+    ("light_bulb", "\u{1F4A1}"),
+    ("link", "\u{1F517}"),
+    ("lock", "\u{1F512}"),
+    ("loudspeaker", "\u{1F4E2}"),
+    ("mag", "\u{1F50D}"),
+    ("magic_wand", "\u{1FA84}"),
+    ("mega", "\u{1F4E3}"),
+    ("memo", "\u{1F4DD}"),
+    ("microscope", "\u{1F52C}"),
+    ("muscle", "\u{1F4AA}"),
+    ("new", "\u{1F195}"),
+    ("no_entry", "\u{26D4}"),
+    ("ok_hand", "\u{1F44C}"),
+    ("one", "\u{0031}\u{FE0F}\u{20E3}"),
+    ("open_file_folder", "\u{1F4C2}"),
+    ("package", "\u{1F4E6}"),
+    ("pencil", "\u{1F4DD}"),
+    ("pencil2", "\u{270F}\u{FE0F}"),
+    ("point_down", "\u{1F447}"),
+    ("point_right", "\u{1F449}"),
+    ("pushpin", "\u{1F4CC}"),
+    ("question", "\u{2753}"),
+    ("rainbow", "\u{1F308}"),
+    ("raised_hands", "\u{1F64C}"),
+    ("recycle", "\u{267B}\u{FE0F}"),
+    ("red_circle", "\u{1F534}"),
+    ("repeat", "\u{1F501}"),
+    ("robot", "\u{1F916}"),
+    ("rocket", "\u{1F680}"),
+    ("rotating_light", "\u{1F6A8}"),
+    ("round_pushpin", "\u{1F4CD}"),
+    ("satellite", "\u{1F4E1}"),
+    ("seedling", "\u{1F331}"),
+    ("shield", "\u{1F6E1}\u{FE0F}"),
+    ("smile", "\u{1F604}"),
+    ("sparkle", "\u{2747}\u{FE0F}"),
+    ("sparkles", "\u{2728}"),
+    ("speech_balloon", "\u{1F4AC}"),
+    ("star", "\u{2B50}"),
+    ("star2", "\u{1F31F}"),
+    ("stars", "\u{1F320}"),
+    ("stopwatch", "\u{23F1}\u{FE0F}"),
+    ("sunglasses", "\u{1F60E}"),
+    ("tada", "\u{1F389}"),
+    ("test_tube", "\u{1F9EA}"),
+    ("thumbsup", "\u{1F44D}"),
+    ("three", "\u{0033}\u{FE0F}\u{20E3}"),
+    ("toolbox", "\u{1F9F0}"),
+    ("trophy", "\u{1F3C6}"),
+    ("two", "\u{0032}\u{FE0F}\u{20E3}"),
+    ("unlock", "\u{1F513}"),
+    ("warning", "\u{26A0}\u{FE0F}"),
+    ("wave", "\u{1F44B}"),
+    ("white_check_mark", "\u{2705}"),
+    ("wrench", "\u{1F527}"),
+    ("x", "\u{274C}"),
     ("zap", "\u{26A1}"),
 ];
 static SHORTCODE_LOOKUP: LazyLock<HashMap<&str, &str>> =
@@ -148,7 +219,9 @@ pub(super) fn render(document: &Document) -> Document {
         if rewritable(document.lines[index].kind, &document.lines[index].raw) {
             *source = outside_code(source, |piece| {
                 BADGE_URL
-                    .replace_all(piece, |captures: &Captures<'_>| percent_decode(&captures[0]))
+                    .replace_all(piece, |captures: &Captures<'_>| {
+                        percent_decode(&captures[0])
+                    })
                     .into_owned()
             });
         }
@@ -464,12 +537,24 @@ fn fold_characters(text: &str) -> String {
 fn fold_one(chars: &[char], index: usize, out: &mut String) {
     let c = chars[index];
     let alphanumeric_neighbour = (index > 0 && chars[index - 1].is_alphanumeric())
-        || chars.get(index + 1).is_some_and(|next| next.is_alphanumeric());
+        || chars
+            .get(index + 1)
+            .is_some_and(|next| next.is_alphanumeric());
     match c {
-        '\u{00AD}' | '\u{200B}' | '\u{200C}' | '\u{200E}' | '\u{200F}' | '\u{2060}'..='\u{2064}'
-        | '\u{FEFF}' | '\u{180E}' | '\u{034F}' | '\u{061C}' => {}
+        '\u{00AD}'
+        | '\u{200B}'
+        | '\u{200C}'
+        | '\u{200E}'
+        | '\u{200F}'
+        | '\u{2060}'..='\u{2064}'
+        | '\u{FEFF}'
+        | '\u{180E}'
+        | '\u{034F}'
+        | '\u{061C}' => {}
         '\u{200D}' if alphanumeric_neighbour || index == 0 || index + 1 == chars.len() => {}
-        '\u{00A0}' | '\u{2000}'..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}' => out.push(' '),
+        '\u{00A0}' | '\u{2000}'..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}' => {
+            out.push(' ')
+        }
         '\u{2010}' | '\u{2011}' | '\u{FE63}' | '\u{FF0D}' => out.push('-'),
         '\u{2012}' => out.push('\u{2013}'),
         '\u{2015}' | '\u{2E3A}' | '\u{2E3B}' | '\u{FE58}' | '\u{FE31}' | '\u{FE32}' => {
@@ -501,8 +586,15 @@ fn math_alphanumeric(c: char) -> Option<(char, bool)> {
     if (0x1D400..=0x1D6A3).contains(&code) {
         let offset = code - 0x1D400;
         let index = (offset % 52) as u8;
-        let letter = if index < 26 { b'A' + index } else { b'a' + index - 26 };
-        return Some((char::from(letter), matches!(offset / 52, 0 | 2 | 4 | 7 | 9 | 11)));
+        let letter = if index < 26 {
+            b'A' + index
+        } else {
+            b'a' + index - 26
+        };
+        return Some((
+            char::from(letter),
+            matches!(offset / 52, 0 | 2 | 4 | 7 | 9 | 11),
+        ));
     }
     if (0x1D7CE..=0x1D7FF).contains(&code) {
         let offset = code - 0x1D7CE;
@@ -546,7 +638,9 @@ fn collapse_triple_emphasis(text: &str) -> String {
             && (index == 0 || chars[index - 1] != c)
         {
             let touches_text = (index > 0 && !chars[index - 1].is_whitespace())
-                || chars.get(index + 3).is_some_and(|next| !next.is_whitespace());
+                || chars
+                    .get(index + 3)
+                    .is_some_and(|next| !next.is_whitespace());
             out.push(c);
             out.push(c);
             if !touches_text {
@@ -605,7 +699,11 @@ fn resolve_references(document: &Document, sources: &mut [String]) {
 }
 
 fn reference_key(label: &str) -> String {
-    label.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 /// Shields reads `_` and `%20` alike as a space; decoding to `_` keeps the URL one token.

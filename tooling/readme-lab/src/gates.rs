@@ -15,8 +15,20 @@ use std::sync::LazyLock;
 const DETAIL_LIMIT: usize = 900;
 /// Every line of these blocks is a command.
 const SHELL_LANGS: &[&str] = &[
-    "", "bash", "sh", "shell", "zsh", "ksh", "fish", "nu", "powershell", "pwsh", "ps1", "bat",
-    "batch", "cmd",
+    "",
+    "bash",
+    "sh",
+    "shell",
+    "zsh",
+    "ksh",
+    "fish",
+    "nu",
+    "powershell",
+    "pwsh",
+    "ps1",
+    "bat",
+    "batch",
+    "cmd",
 ];
 /// Prompted lines are commands and the rest is output; a block with no prompt is all commands.
 /// Any other language is scanned only on prompted lines.
@@ -153,11 +165,9 @@ static LIMITS_HEADING: LazyLock<Regex> = LazyLock::new(|| {
     regex(r"(?i)\b(?:limits?|limitations?|non-goals?|out of scope|unsupported|not supported)\b")
 });
 static ENV_ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| regex(r"^[A-Za-z_][A-Za-z0-9_]*="));
-static PROMPT: LazyLock<Regex> = LazyLock::new(|| {
-    regex(r"^\s*(?:PS [^>\n]*>|[\w.-]+@[\w.-]+(?::[^\s$#%>]*)?[$#%]|[$%])\s+")
-});
-static REDIRECT: LazyLock<Regex> =
-    LazyLock::new(|| regex(r"^\d*(?:>>?|<<?<?|>&|<&|&>>?)(.*)$"));
+static PROMPT: LazyLock<Regex> =
+    LazyLock::new(|| regex(r"^\s*(?:PS [^>\n]*>|[\w.-]+@[\w.-]+(?::[^\s$#%>]*)?[$#%]|[$%])\s+"));
+static REDIRECT: LazyLock<Regex> = LazyLock::new(|| regex(r"^\d*(?:>>?|<<?<?|>&|<&|&>>?)(.*)$"));
 static PLACEHOLDER: LazyLock<Regex> = LazyLock::new(|| regex(r"^<[^<>\s]+>$"));
 static INLINE_COMMENT: LazyLock<Regex> = LazyLock::new(|| regex(r"<!--.*?-->"));
 static LINK_TEXT: LazyLock<Regex> = LazyLock::new(|| regex(r"!?\[([^\]]*)\]\([^)]*\)"));
@@ -198,7 +208,7 @@ impl Gate {
 
 /// Relative links and images resolve inside the repository with exact letter case; anchors
 /// match headings, in this document or in the linked Markdown file.
-pub fn links_resolve(document: &Document, root: &Path) -> Gate {
+pub fn links_resolve(document: &Document, root: &Path, base: &Path) -> Gate {
     let anchors = anchor_set(document);
     let mut failures = Vec::new();
     let mut checked = 0;
@@ -216,7 +226,7 @@ pub fn links_resolve(document: &Document, root: &Path) -> Gate {
             };
             let offset = captures.get(0).map_or(0, |whole| whole.start());
             let line = first_line + line_starts.partition_point(|&start| start <= offset) - 1;
-            match check_target(target.as_str(), root, &anchors) {
+            match check_target(target.as_str(), root, base, &anchors) {
                 Ok(true) => checked += 1,
                 Ok(false) => {}
                 Err(reason) => failures.push(format!("line {line}: {reason}")),
@@ -273,7 +283,12 @@ fn anchor_set(document: &Document) -> HashSet<String> {
 }
 
 /// Returns `Ok(true)` for a resolved local target, `Ok(false)` for an external one.
-fn check_target(target: &str, root: &Path, anchors: &HashSet<String>) -> Result<bool, String> {
+fn check_target(
+    target: &str,
+    root: &Path,
+    base: &Path,
+    anchors: &HashSet<String>,
+) -> Result<bool, String> {
     let target = target.trim();
     let lower = target.to_lowercase();
     if target.is_empty() {
@@ -295,16 +310,14 @@ fn check_target(target: &str, root: &Path, anchors: &HashSet<String>) -> Result<
     let path_part = target.split(['#', '?']).next().unwrap_or_default();
     let fragment = target.split_once('#').map(|(_, fragment)| fragment);
     let decoded = percent_decode(path_part);
-    let mut relative = decoded.trim_start_matches('/');
-    while let Some(rest) = relative.strip_prefix("./") {
-        relative = rest;
-    }
-    if Path::new(relative)
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
-        return Err(format!("`{target}` escapes the repository"));
-    }
+    let owned;
+    let relative = if let Some(from_root) = decoded.strip_prefix('/') {
+        from_root
+    } else {
+        owned = resolve_from(base, &decoded)
+            .ok_or_else(|| format!("`{target}` escapes the repository"))?;
+        owned.as_str()
+    };
     if !exists_exact(root, relative) {
         return Err(if root.join(relative).exists() {
             format!("`{target}` differs in letter case from the path on disk")
@@ -315,9 +328,9 @@ fn check_target(target: &str, root: &Path, anchors: &HashSet<String>) -> Result<
     let markdown_file = [".md", ".markdown"]
         .iter()
         .any(|extension| relative.to_ascii_lowercase().ends_with(extension));
-    if let Some(fragment) = fragment.filter(|fragment| {
-        markdown_file && !fragment.is_empty() && !LINE_ANCHOR.is_match(fragment)
-    }) {
+    if let Some(fragment) = fragment
+        .filter(|fragment| markdown_file && !fragment.is_empty() && !LINE_ANCHOR.is_match(fragment))
+    {
         let source = std::fs::read_to_string(root.join(relative))
             .map_err(|error| format!("`{target}` unreadable: {error}"))?;
         if !anchor_set(&markdown::parse(&source)).contains(&fragment.to_lowercase()) {
@@ -325,6 +338,29 @@ fn check_target(target: &str, root: &Path, anchors: &HashSet<String>) -> Result<
         }
     }
     Ok(true)
+}
+
+/// Joins a link to the directory holding the scoring document, lexically. `None` when the
+/// result would leave the repository, which `..` can do from any directory below the root.
+fn resolve_from(base: &Path, target: &str) -> Option<String> {
+    let mut parts: Vec<String> = base
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    for component in Path::new(target).components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                parts.pop()?;
+            }
+            Component::Normal(name) => parts.push(name.to_string_lossy().into_owned()),
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(parts.join("/"))
 }
 
 /// Existence with byte-exact names, so a case mismatch fails on case-insensitive filesystems too.
@@ -396,7 +432,12 @@ enum Target {
 
 /// Every shell command invoking an autoresearch binary, in code blocks or inline code, parses
 /// with the real CLI definition or the binary's configured argument shapes.
-pub fn cli_invocations_parse(document: &Document, root: &Path, config: &Config) -> CliScan {
+pub fn cli_invocations_parse(
+    document: &Document,
+    root: &Path,
+    config: &Config,
+    scored: &Path,
+) -> CliScan {
     let mut state = CliState {
         root,
         config,
@@ -435,18 +476,26 @@ pub fn cli_invocations_parse(document: &Document, root: &Path, config: &Config) 
             continue;
         }
         for span in code_spans(&line.raw) {
-            let command = PROMPT.find(&span).map_or(span.as_str(), |found| &span[found.end()..]);
+            let command = PROMPT
+                .find(&span)
+                .map_or(span.as_str(), |found| &span[found.end()..]);
             for segment in command_segments(command) {
                 check_segment(&segment, true, line.number, &mut state);
             }
         }
     }
 
-    for required in &config.required_subcommands {
-        if !state.used.contains(required) {
-            state
-                .failures
-                .push(format!("no parseable `autoresearch {required}` example"));
+    let owes_subcommands = config
+        .required_subcommands_page
+        .as_ref()
+        .is_none_or(|page| page == scored);
+    if owes_subcommands {
+        for required in &config.required_subcommands {
+            if !state.used.contains(required) {
+                state
+                    .failures
+                    .push(format!("no parseable `autoresearch {required}` example"));
+            }
         }
     }
     CliScan {
@@ -525,7 +574,11 @@ fn check_binary(name: &str, args: &[String], state: &CliState<'_>) -> Result<(),
     if binary.argv.iter().any(|shape| argv_matches(shape, args)) {
         return Ok(());
     }
-    let shapes: Vec<String> = binary.argv.iter().map(|shape| format!("`{shape}`")).collect();
+    let shapes: Vec<String> = binary
+        .argv
+        .iter()
+        .map(|shape| format!("`{shape}`"))
+        .collect();
     Err(format!(
         "`{name} {}` matches no accepted argument shape ({})",
         args.join(" "),
@@ -762,7 +815,8 @@ fn container_snippets(document: &Document) -> Vec<Snippet> {
             line.raw.clone()
         };
         let fence_indent = indent_width(&opener);
-        let Some((fence_char, fence_len, lang)) = opens_fence(&dedent(&opener, fence_indent)) else {
+        let Some((fence_char, fence_len, lang)) = opens_fence(&dedent(&opener, fence_indent))
+        else {
             continue;
         };
         let mut body = Vec::new();
@@ -1021,7 +1075,10 @@ fn drop_redirections(tokens: Vec<(String, bool)>) -> Vec<String> {
 /// Skips environment assignments and commands that run another command: `sudo`, `env`, `time`.
 fn strip_prefix_commands(mut tokens: &[String]) -> &[String] {
     loop {
-        while tokens.first().is_some_and(|token| ENV_ASSIGNMENT.is_match(token)) {
+        while tokens
+            .first()
+            .is_some_and(|token| ENV_ASSIGNMENT.is_match(token))
+        {
             tokens = &tokens[1..];
         }
         let Some(first) = tokens.first() else {
@@ -1035,7 +1092,10 @@ fn strip_prefix_commands(mut tokens: &[String]) -> &[String] {
                 ],
                 0,
             ),
-            "env" => (&["-u", "--unset", "-C", "--chdir", "-S", "--split-string"], 0),
+            "env" => (
+                &["-u", "--unset", "-C", "--chdir", "-S", "--split-string"],
+                0,
+            ),
             "time" => (&["-o", "-f", "--output", "--format"], 0),
             "nice" => (&["-n", "--adjustment"], 0),
             "watch" => (&["-n", "--interval"], 0),
@@ -1147,12 +1207,16 @@ fn validate_fragment(fragment: &toml::Table) -> Result<(), String> {
     let mut manifest: toml::Table = toml::from_str(FRAGMENT_BASE).expect("static manifest");
     for (key, value) in fragment {
         match (manifest.get_mut(key), value) {
-            (Some(toml::Value::Table(base)), toml::Value::Table(overlay)) if key == "experiment" => {
+            (Some(toml::Value::Table(base)), toml::Value::Table(overlay))
+                if key == "experiment" =>
+            {
                 for (inner_key, inner_value) in overlay {
                     base.insert(inner_key.clone(), inner_value.clone());
                 }
             }
-            (Some(toml::Value::Array(base)), toml::Value::Table(overlay)) if key == "evaluators" => {
+            (Some(toml::Value::Array(base)), toml::Value::Table(overlay))
+                if key == "evaluators" =>
+            {
                 if let Some(evaluator) = base.first_mut().and_then(toml::Value::as_table_mut) {
                     merge_evaluator(evaluator, overlay);
                 }
@@ -1310,7 +1374,8 @@ fn normalize_json(body: &str, relaxed: bool) -> (String, bool) {
             continue;
         } else if relaxed && character == '/' && next == Some('*') {
             index += 2;
-            while index < chars.len() && !(chars[index] == '*' && chars.get(index + 1) == Some(&'/'))
+            while index < chars.len()
+                && !(chars[index] == '*' && chars.get(index + 1) == Some(&'/'))
             {
                 index += 1;
             }
@@ -1355,9 +1420,7 @@ fn drop_dangling_commas(text: &str) -> String {
         } else if character == ',' {
             let next = chars[index + 1..].iter().find(|c| !c.is_whitespace());
             let previous = out.chars().rev().find(|c| !c.is_whitespace());
-            if matches!(next, None | Some(']' | '}' | ','))
-                || matches!(previous, Some('[' | '{'))
-            {
+            if matches!(next, None | Some(']' | '}' | ',')) || matches!(previous, Some('[' | '{')) {
                 continue;
             }
         }
@@ -1378,7 +1441,11 @@ struct LimitUnit {
 /// list item, table row, or heading affirms a limit term with claim wording in the term's clause;
 /// and no un-negated clause of a sentence, list item, table cell, or heading matches a limit's
 /// `claims_any` pattern.
-pub fn limits_preserved(document: &Document, config: &Config) -> Gate {
+pub fn limits_preserved(document: &Document, config: &Config, scored: &Path) -> Gate {
+    let owes_limits = config
+        .limits_page
+        .as_ref()
+        .is_none_or(|page| page == scored);
     let headings = document.rendered_headings();
     let negating_section = |line: usize| {
         let mut level = usize::MAX;
@@ -1391,7 +1458,9 @@ pub fn limits_preserved(document: &Document, config: &Config) -> Gate {
                 level = level.min(heading.level);
                 ancestor
             })
-            .any(|heading| NEGATION.is_match(&heading.text) || LIMITS_HEADING.is_match(&heading.text))
+            .any(|heading| {
+                NEGATION.is_match(&heading.text) || LIMITS_HEADING.is_match(&heading.text)
+            })
     };
 
     let mut units = Vec::new();
@@ -1470,8 +1539,15 @@ pub fn limits_preserved(document: &Document, config: &Config) -> Gate {
             .map(|pattern| Regex::new(pattern))
             .collect::<Result<Vec<_>, _>>()
             .unwrap_or_else(|error| {
-                let error = error.to_string().split_whitespace().collect::<Vec<_>>().join(" ");
-                failures.push(format!("limit `{}` claims_any pattern invalid: {error}", group.id));
+                let error = error
+                    .to_string()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                failures.push(format!(
+                    "limit `{}` claims_any pattern invalid: {error}",
+                    group.id
+                ));
                 Vec::new()
             });
         let claim_units = units
@@ -1493,7 +1569,7 @@ pub fn limits_preserved(document: &Document, config: &Config) -> Gate {
                 }
             }
         }
-        if !stated {
+        if !stated && owes_limits {
             failures.push(format!("limit `{}` no longer stated", group.id));
         }
     }
@@ -1587,7 +1663,9 @@ fn table_cells(row: &str) -> Vec<String> {
 fn scoped_negation(text: &str, start: usize, end: usize) -> bool {
     let before = &text[..start];
     let clause = match CLAUSE_BREAK.find_iter(before).last() {
-        Some(found) if found.as_str() == ":" && COLON_LEAD_IN.is_match(&before[..found.start()]) => {
+        Some(found)
+            if found.as_str() == ":" && COLON_LEAD_IN.is_match(&before[..found.start()]) =>
+        {
             return true;
         }
         Some(found) => &before[found.end()..],
@@ -1685,7 +1763,12 @@ pub fn uncovered_use_cases(document: &Document, config: &Config) -> Vec<String> 
     let keywords: Vec<Vec<String>> = config
         .use_cases
         .iter()
-        .map(|lane| lane.heading_any.iter().map(|keyword| normalize_title(keyword)).collect())
+        .map(|lane| {
+            lane.heading_any
+                .iter()
+                .map(|keyword| normalize_title(keyword))
+                .collect()
+        })
         .collect();
     let mut covered = vec![false; config.use_cases.len()];
     for (index, heading) in headings.iter().enumerate() {
@@ -1743,7 +1826,9 @@ fn heading_source(document: &Document, heading: &Heading) -> String {
 /// Lowercase rendered heading text with `-` and `_` read as spaces and inline code kept.
 fn normalize_title(raw: &str) -> String {
     let trimmed = raw.trim().trim_start_matches('#').trim_end_matches('#');
-    let lower = rendered_text(trimmed).to_lowercase().replace(['-', '_'], " ");
+    let lower = rendered_text(trimmed)
+        .to_lowercase()
+        .replace(['-', '_'], " ");
     A11Y.replace_all(&lower, "accessibility")
         .split_whitespace()
         .collect::<Vec<_>>()

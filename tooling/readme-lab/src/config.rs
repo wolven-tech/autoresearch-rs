@@ -11,16 +11,25 @@ pub struct Config {
     pub rules_dev: PathBuf,
     /// Rule file the proposer never sees, relative to this config file.
     pub rules_holdout: PathBuf,
-    /// Subcommands the README must demonstrate with a parseable invocation.
+    /// Subcommands one page must demonstrate with a parseable invocation.
     #[serde(default)]
     pub required_subcommands: Vec<String>,
+    /// Page that owes `required_subcommands`, relative to the repository root. Absent asks every
+    /// scored page for them, which is right only while one page documents the whole CLI.
+    pub required_subcommands_page: Option<PathBuf>,
     /// Other `autoresearch-*` binaries a README may invoke.
     #[serde(default)]
     pub known_binaries: BTreeMap<String, KnownBinary>,
     #[serde(default)]
     pub limits: Vec<LimitGroup>,
+    /// Page that owes the stated limits, relative to the repository root. Absent asks the scored
+    /// page for them. Overclaims are still refused on every page.
+    pub limits_page: Option<PathBuf>,
     #[serde(default)]
     pub use_cases: Vec<UseCase>,
+    /// Page that owes the use-case lanes, relative to the repository root. Absent asks the scored
+    /// page for them.
+    pub use_cases_page: Option<PathBuf>,
     /// Absent fails the slop contract's substance gate closed.
     pub substance: Option<Substance>,
     /// Holdout slop points the slop contract may not exceed; absent fails that gate closed.

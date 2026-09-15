@@ -8,7 +8,7 @@ RUSTC_WRAPPER= cargo test -p autoresearch-training-candle --offline --test parit
 
 Python is required here as independent reference implementation. Script uses
 standard library only; no Python package or network install. Rust/Candle and
-Python consume same SHA-pinned fixture and seed 23. [Frozen report](../fixtures/tiny/parity-report.json)
+Python consume same SHA-pinned fixture and seed 23. [Frozen report](../../fixtures/tiny/parity-report.json)
 records device, dtype, numeric tolerances, observed differences, and known
 semantic gaps.
 

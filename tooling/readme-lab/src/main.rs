@@ -163,15 +163,28 @@ fn evaluate(
         &slop::load(&config_dir.join(&config.rules_holdout))?,
     );
 
-    let cli = gates::cli_invocations_parse(&document, root, &config);
+    let base = readme
+        .parent()
+        .and_then(|parent| parent.strip_prefix(root).ok())
+        .unwrap_or(Path::new(""));
+    let scored = readme.strip_prefix(root).unwrap_or(readme);
+    let cli = gates::cli_invocations_parse(&document, root, &config, scored);
     let mut all = vec![
-        gates::links_resolve(&document, root),
+        gates::links_resolve(&document, root, base),
         cli.gate,
         gates::code_blocks_parse(&document),
-        gates::limits_preserved(&document, &config),
+        gates::limits_preserved(&document, &config, scored),
         gates::markdown_well_formed(&document),
     ];
-    let uncovered = gates::uncovered_use_cases(&document, &config);
+    let owes_use_cases = config
+        .use_cases_page
+        .as_ref()
+        .is_none_or(|page| page == scored);
+    let uncovered = if owes_use_cases {
+        gates::uncovered_use_cases(&document, &config)
+    } else {
+        Vec::new()
+    };
     let prose_words = document.prose_words();
     let code_blocks = document.code_blocks.len();
 
@@ -221,7 +234,10 @@ fn measurements(evaluation: &Evaluation, contract: Contract) -> Result<Vec<Measu
     let error = |error: autoresearch_core::MetricError| error.to_string();
     let mut out = Vec::new();
     for gate in &evaluation.gates {
-        out.push(Measurement::hard_gate(gate.name, gate.passed, Some(gate.detail.clone())).map_err(error)?);
+        out.push(
+            Measurement::hard_gate(gate.name, gate.passed, Some(gate.detail.clone()))
+                .map_err(error)?,
+        );
     }
     let dev_points = evaluation.dev.points as f64;
     let uncovered = evaluation.uncovered.len() as f64;
@@ -239,9 +255,21 @@ fn measurements(evaluation: &Evaluation, contract: Contract) -> Result<Vec<Measu
         .map_err(error)?,
     );
     let mut diagnostics = vec![
-        ("holdout_slop_points", MetricDirection::Minimize, evaluation.holdout.points as f64),
-        ("prose_words", MetricDirection::Maximize, evaluation.prose_words as f64),
-        ("code_blocks", MetricDirection::Maximize, evaluation.code_blocks as f64),
+        (
+            "holdout_slop_points",
+            MetricDirection::Minimize,
+            evaluation.holdout.points as f64,
+        ),
+        (
+            "prose_words",
+            MetricDirection::Maximize,
+            evaluation.prose_words as f64,
+        ),
+        (
+            "code_blocks",
+            MetricDirection::Maximize,
+            evaluation.code_blocks as f64,
+        ),
     ];
     if contract == Contract::Coverage {
         diagnostics.insert(0, ("slop_points", MetricDirection::Minimize, dev_points));

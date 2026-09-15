@@ -31,8 +31,10 @@ static CALLOUT_LABEL: LazyLock<Regex> = LazyLock::new(|| {
         .expect("static regex")
 });
 static LINK_ONLY_ITEM: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(?:[-*+]|\d{1,9}[.)])\s+(?:\[[^\]]+\]\([^)]*\)|`[^`]+`)\s*(?:\([^)]{0,40}\))?\s*$")
-        .expect("static regex")
+    Regex::new(
+        r"^\s*(?:[-*+]|\d{1,9}[.)])\s+(?:\[[^\]]+\]\([^)]*\)|`[^`]+`)\s*(?:\([^)]{0,40}\))?\s*$",
+    )
+    .expect("static regex")
 });
 
 #[derive(Debug, Deserialize)]
@@ -264,8 +266,8 @@ fn verify_emoji_properties() -> Result<(), String> {
         (r"\p{Emoji_Presentation}", "\u{1F680}"),
         (r"\p{Extended_Pictographic}", "\u{2764}"),
     ] {
-        let regex = Regex::new(pattern)
-            .map_err(|error| format!("regex build lacks {pattern}: {error}"))?;
+        let regex =
+            Regex::new(pattern).map_err(|error| format!("regex build lacks {pattern}: {error}"))?;
         if !regex.is_match(sample) {
             return Err(format!("{pattern} does not match {sample}"));
         }
@@ -275,9 +277,7 @@ fn verify_emoji_properties() -> Result<(), String> {
 
 fn compile(id: &str, field: &str, pattern: Option<&str>) -> Result<Option<Regex>, String> {
     pattern
-        .map(|pattern| {
-            Regex::new(pattern).map_err(|error| format!("rule `{id}` {field}: {error}"))
-        })
+        .map(|pattern| Regex::new(pattern).map_err(|error| format!("rule `{id}` {field}: {error}")))
         .transpose()
 }
 
@@ -300,8 +300,11 @@ pub fn load(path: &Path) -> Result<Vec<Rule>, String> {
                 return Err(format!("rule `{}` needs a pattern", spec.id));
             }
             let body = compile(&spec.id, "body_pattern", spec.body_pattern.as_deref())?;
-            let separator =
-                compile(&spec.id, "separator_pattern", spec.separator_pattern.as_deref())?;
+            let separator = compile(
+                &spec.id,
+                "separator_pattern",
+                spec.separator_pattern.as_deref(),
+            )?;
             let ancestor = compile(
                 &spec.id,
                 "unless_ancestor_heading",
@@ -656,7 +659,8 @@ fn regex_rule(context: &Context<'_>, rule: &Rule) -> Vec<Hit> {
         if found.is_empty() {
             continue;
         }
-        let grouped = spec.group_consecutive && previous_match.is_some_and(|last| last + 1 == *index);
+        let grouped =
+            spec.group_consecutive && previous_match.is_some_and(|last| last + 1 == *index);
         previous_match = Some(*index);
         if grouped {
             continue;
@@ -827,7 +831,9 @@ fn section(context: &Context<'_>, rule: &Rule) -> Vec<Hit> {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        let thin = spec.max_body_lines.is_none_or(|maximum| non_blank <= maximum)
+        let thin = spec
+            .max_body_lines
+            .is_none_or(|maximum| non_blank <= maximum)
             && spec
                 .max_body_words
                 .is_none_or(|maximum| word_count(&text) <= maximum)
@@ -918,7 +924,12 @@ fn list_dominant(context: &Context<'_>, spec: &RuleSpec) -> Vec<Hit> {
     if enough && ratio_ok(spec, ratio(items.len(), paragraphs)) {
         items
             .first()
-            .map(|line| hit(line, &format!("{} list lines, {paragraphs} paragraph lines", items.len())))
+            .map(|line| {
+                hit(
+                    line,
+                    &format!("{} list lines, {paragraphs} paragraph lines", items.len()),
+                )
+            })
             .into_iter()
             .collect()
     } else {
@@ -933,10 +944,9 @@ fn consecutive_lists(context: &Context<'_>, rule: &Rule) -> Vec<Hit> {
         block.kind == BlockKind::Heading
             || (block.kind == BlockKind::Paragraph
                 && block.lines.len() == 1
-                && rule
-                    .separator
-                    .as_ref()
-                    .is_some_and(|pattern| pattern.is_match(&document.lines[block.lines[0]].nocode)))
+                && rule.separator.as_ref().is_some_and(|pattern| {
+                    pattern.is_match(&document.lines[block.lines[0]].nocode)
+                }))
     };
     let mut hits = Vec::new();
     for (index, block) in blocks.iter().enumerate() {
@@ -1079,8 +1089,7 @@ fn toc_short_doc(context: &Context<'_>, rule: &Rule) -> Vec<Hit> {
             run = 0;
         }
     }
-    let has_toc =
-        (toc_heading && longest_run >= 2) || longest_run >= spec.min_run.unwrap_or(4);
+    let has_toc = (toc_heading && longest_run >= 2) || longest_run >= spec.min_run.unwrap_or(4);
     let short = spec
         .short_prose_words
         .is_some_and(|ceiling| context.prose_words < ceiling)
@@ -1240,14 +1249,20 @@ fn duplicate_shingles(context: &Context<'_>, rule: &Rule) -> Vec<Hit> {
             span = match span {
                 Some((start, last)) if offset < last + size => Some((start, offset)),
                 Some((start, last)) => {
-                    hits.push(hit(&document.lines[*index], &tokens[start..last + size].join(" ")));
+                    hits.push(hit(
+                        &document.lines[*index],
+                        &tokens[start..last + size].join(" "),
+                    ));
                     Some((offset, offset))
                 }
                 None => Some((offset, offset)),
             };
         }
         if let Some((start, last)) = span {
-            hits.push(hit(&document.lines[*index], &tokens[start..last + size].join(" ")));
+            hits.push(hit(
+                &document.lines[*index],
+                &tokens[start..last + size].join(" "),
+            ));
         }
     }
     hits
@@ -1325,7 +1340,9 @@ fn table(context: &Context<'_>, rule: &Rule) -> Vec<Hit> {
             .iter()
             .filter(|line| pattern.is_match(&line.nocode))
             .count();
-        let fires = spec.min_body_rows.is_none_or(|minimum| body.len() >= minimum)
+        let fires = spec
+            .min_body_rows
+            .is_none_or(|minimum| body.len() >= minimum)
             && matches >= spec.min_matches.unwrap_or(1)
             && spec
                 .max_columns

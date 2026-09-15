@@ -187,18 +187,15 @@ fn build(sources: &[String], breaks: &[bool], rendered: bool) -> Document {
         let mut line = classify(number, raw, rendered);
         line.hard_break = breaks.get(index).copied().unwrap_or(false);
         let previous = lines.last().map(|previous: &Line| previous.kind);
-        let after_break = previous.is_none_or(|kind| {
-            matches!(kind, LineKind::Blank | LineKind::IndentedCode)
-        });
-        if line.kind == LineKind::Paragraph && indent_width(raw) >= 4 && after_break && !list_open
-        {
+        let after_break =
+            previous.is_none_or(|kind| matches!(kind, LineKind::Blank | LineKind::IndentedCode));
+        if line.kind == LineKind::Paragraph && indent_width(raw) >= 4 && after_break && !list_open {
             line = Line::bare(number, LineKind::IndentedCode, raw);
         }
         match line.kind {
             LineKind::ListItem => list_open = true,
             LineKind::Blank | LineKind::IndentedCode => {}
-            LineKind::Paragraph
-                if indent_width(raw) >= 2 || previous != Some(LineKind::Blank) => {}
+            LineKind::Paragraph if indent_width(raw) >= 2 || previous != Some(LineKind::Blank) => {}
             _ => list_open = false,
         }
         lines.push(line);
@@ -569,9 +566,7 @@ pub fn closes_fence(raw: &str, fence_char: char, fence_len: usize) -> bool {
 
 fn is_rule(trimmed: &str) -> bool {
     let marks: Vec<char> = trimmed.chars().filter(|c| !c.is_whitespace()).collect();
-    marks.len() >= 3
-        && matches!(marks[0], '-' | '*' | '_')
-        && marks.iter().all(|c| *c == marks[0])
+    marks.len() >= 3 && matches!(marks[0], '-' | '*' | '_') && marks.iter().all(|c| *c == marks[0])
 }
 
 /// In the rendered view a line opening with a tag is HTML only when no text is visible.
@@ -689,7 +684,10 @@ pub fn github_slug(raw: &str) -> String {
         if is_code {
             rendered.push_str(&piece);
         } else {
-            let text = HTML_TAG.replace_all(&piece, "").replace('*', "").replace("~~", "");
+            let text = HTML_TAG
+                .replace_all(&piece, "")
+                .replace('*', "")
+                .replace("~~", "");
             rendered.push_str(&strip_underscore_delimiters(&text));
         }
     }
@@ -719,7 +717,9 @@ fn strip_underscore_delimiters(text: &str) -> String {
             c != '_'
                 || (index > 0
                     && chars[index - 1].is_alphanumeric()
-                    && chars.get(index + 1).is_some_and(|next| next.is_alphanumeric()))
+                    && chars
+                        .get(index + 1)
+                        .is_some_and(|next| next.is_alphanumeric()))
         })
         .map(|(_, &c)| c)
         .collect()
@@ -789,8 +789,9 @@ fn group_blocks(lines: &[Line]) -> Vec<Block> {
                     let Some(next) = lines.get(index) else { break };
                     let continues = match next.kind {
                         LineKind::ListItem => true,
-                        LineKind::Paragraph => lines[index - 1].kind != LineKind::Blank
-                            || indent_width(&next.raw) >= 2,
+                        LineKind::Paragraph => {
+                            lines[index - 1].kind != LineKind::Blank || indent_width(&next.raw) >= 2
+                        }
                         LineKind::Blank => next_non_blank[index + 1]
                             .map(|later| &lines[later])
                             .is_some_and(|later| {

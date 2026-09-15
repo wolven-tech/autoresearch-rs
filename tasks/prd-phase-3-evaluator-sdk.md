@@ -3,7 +3,7 @@
 
 Status: proposed for implementation
 Repository: `wolven-tech/autoresearch-rs`
-Source of truth: `docs/plans/2026-09-11-autoresearch-rust-platform-design.md` and `.planning/ROADMAP.md`
+Source of truth: `docs/project/plans/2026-09-11-autoresearch-rust-platform-design.md` and `.planning/ROADMAP.md`
 
 ## Overview
 
@@ -97,7 +97,7 @@ that an independent executable can return evidence without linking Rust code.
   belongs on stderr, not stdout.
 - [ ] Document protocol version `1`, field meanings, success and evaluator-
   reported failure shapes, numeric/gate encoding, and backward-compatibility
-  rule in `docs/evaluator-protocol.md`.
+  rule in `docs/reference/evaluator-protocol.md`.
 - [ ] Unknown protocol versions fail closed; version changes require a new
   fixture and explicit migration decision.
 - [ ] Protocol tests pass with no shell parser or network dependency.
