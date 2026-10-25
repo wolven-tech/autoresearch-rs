@@ -1,0 +1,22 @@
+command_seconds = 270
+environment = ["PATH", "RUSTUP_TOOLCHAIN", "RUSTFLAGS", "RUSTC_WRAPPER", "CARGO_TARGET_DIR"]
+
+[[gates]]
+name = "format"
+argv = ["cargo", "fmt", "--all", "--check"]
+
+[[gates]]
+name = "cli-tests"
+argv = ["cargo", "test", "--locked", "-p", "autoresearch-cli", "--", "--test-threads=1"]
+success_marker = "test result: ok."
+test = true
+compile = true
+
+[[gates]]
+name = "cli-clippy"
+argv = ["cargo", "clippy", "--locked", "-p", "autoresearch-cli", "--all-targets", "--", "-D", "warnings"]
+compile = true
+
+[[gates]]
+name = "diff"
+argv = ["git", "diff", "--check"]

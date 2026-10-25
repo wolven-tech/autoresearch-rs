@@ -787,12 +787,21 @@ fn doctor(repository: &Path) -> DoctorReport {
     }
 
     if let Some(manifest) = manifest {
-        check_executable(
-            &mut checks,
-            effective_root,
-            "agent_executable",
-            manifest.agent().program(),
-        );
+        if manifest.agent().program() == "manual" {
+            push_check(
+                &mut checks,
+                "agent_executable",
+                true,
+                "manual agent; no executable required",
+            );
+        } else {
+            check_executable(
+                &mut checks,
+                effective_root,
+                "agent_executable",
+                manifest.agent().program(),
+            );
+        }
         for evaluator in manifest.evaluators() {
             check_executable(
                 &mut checks,
