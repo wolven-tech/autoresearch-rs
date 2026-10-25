@@ -321,13 +321,13 @@ Validates:
 - Git is available and the repository is clean.
 - `autoresearch.toml` exists and is valid TOML.
 - `program.md` exists.
-- The agent program can be found (bare names are resolved against your PATH; absolute paths are checked for existence).
+- The agent program is exactly `manual`, or its executable can be found (bare names are resolved against your PATH; paths must name executable files). The case-sensitive `manual` sentinel passes the existing `agent_executable` check without executable lookup.
 - Every evaluator program can be found (same path resolution rules).
 
 Gaps you should know:
 
 - `doctor` resolves bare agent program names against your PATH, but evaluators run with an empty environment and never see PATH.
-- `doctor` treats `program = "manual"` as a program to look up, so a manual-agent manifest reports not ready. Use `init` to create a working template, then replace the evaluator and set `program = "manual"` if you intend to edit candidates by hand.
+- Every evaluator still requires an executable, including when the agent uses `program = "manual"`. Use `init` to create a template, replace the evaluator, and set the agent to `program = "manual"` if you intend to edit candidates by hand.
 
 Exit codes:
 

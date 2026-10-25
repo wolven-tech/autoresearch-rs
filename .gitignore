@@ -25,3 +25,6 @@ results.tsv
 # Rust build output and autoresearch run state
 target/
 .autoresearch/
+/.allstack/
+/.chronis/
+/.prime/
