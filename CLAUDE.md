@@ -51,3 +51,24 @@ git push --force-with-lease=refs/heads/<branch>:<old-head> origin HEAD:<branch>
 
 Pin the lease to the old head you actually reviewed. The bare form does not
 refuse when someone else pushed in between; the pinned form does.
+
+## Planning
+
+Planned work runs as one `ritual-full` flow on a Chronis epic: Think, Spec, Plan,
+Build, Review, Ship, Reflect. The epic's `ritual-*` lines name each step's file.
+
+The design approval is the user's decision. An agent runs
+`cos ritual approve <epic> <design> --by "<name>" --review <path> --yes`, or
+`cn approve <epic>` without `cos` once the user has appended the `ritual-approved:`
+line (spec.md, Approve), only after the user explicitly tells it to approve in the
+conversation, quotes that instruction in its report, and never approves on its own
+initiative. `--yes` needs decebal/chief-of-staff-v2#23. This is an
+instruction, not a hook: no hook in this repo enforces it.
+
+Bugs with a clear reproduction skip Think and Spec and go through
+`systematic-debugging`.
+
+The `ritual`, `ritual-full` and `semantic-isa` skills are vendored byte-for-byte
+under `.claude/skills/` and `.agents/skills/` from decebal-claude-skills PR #97,
+head `8af7330` (`feat/agent-approval-when-told`).
+Guide: [ritual, zero to hero](https://github.com/decebal/decebal-claude-skills/blob/main/docs/ritual-zero-to-hero.md).

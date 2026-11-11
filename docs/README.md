@@ -44,15 +44,6 @@ Background for decisions you are weighing, with the trade-offs stated. Read thes
 - [What a keep does not prove](explanation/limits.md): the claims a green run does not support
 - [Architecture](explanation/architecture.md): the crates, and how Git isolation and the protocol fit together
 
-Dated project records are kept for provenance rather than for reading order: the [platform design](project/plans/2026-09-11-autoresearch-rust-platform-design.md), the [README ledger](project/ledger/readme-autoresearch.md) and the [launch notes](project/social/2026-09-14-autoresearch-rs-launch.md).
-- [Allstack native skills](reference/allstack-skills.md)
-- [Allstack CLI and recovery](reference/allstack.md)
-- [Allstack workflow catalog](reference/allstack-catalog.md)
+Dated project records are kept for provenance rather than for reading order: the [platform design](project/plans/2026-09-11-autoresearch-rust-platform-design.md), the [README ledger](project/ledger/readme-autoresearch.md) and the [launch notes](project/social/2026-09-14-autoresearch-rs-launch.md). The AllStack-era records kept for history are the [manual-agent readiness request](project/plans/2026-10-25-manual-agent-readiness-request.md), its [plan](project/plans/2026-10-25-manual-agent-readiness-plan.md) and [verification report](project/reports/2026-10-25-native-manual-agent-readiness-verification.md), and the [AllStack delivery plan](plans/allstack-c80b8084-4d2e-491d-8051-bb3c4d997aa1.md).
 
-## Native Allstack delivery
-
-- [Manual-agent readiness request](project/plans/2026-10-25-manual-agent-readiness-request.md)
-- [Manual-agent readiness plan](project/plans/2026-10-25-manual-agent-readiness-plan.md)
-- [Native workflow verification](project/reports/2026-10-25-native-manual-agent-readiness-verification.md)
-
-- [Allstack delivery plan c80b8084-4d2e-491d-8051-bb3c4d997aa1](plans/allstack-c80b8084-4d2e-491d-8051-bb3c4d997aa1.md)
+Planned work runs through the [ritual-full adoption record](project/reports/2026-11-11-ritual-full-adoption.md).
