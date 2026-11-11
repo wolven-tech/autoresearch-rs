@@ -54,7 +54,7 @@ Stderr was empty in every independent rerun, and fixture bytes remained unchange
 
 ## Delivery boundary and enforcement
 
-The indexed [project policy](../../../workflows/verification.toml) requires workspace formatting, all CLI tests, scoped CLI lint, and whitespace validation at the prepared commit. Tests run serially because existing CLI fixtures compile helper executables. Each policy command has a 270-second deadline. Private host and gate receipts remain under ignored `.allstack/` and are read through Allstack's evidence commands.
+The indexed project policy (`workflows/verification.toml`, removed 2026-11-11) requires workspace formatting, all CLI tests, scoped CLI lint, and whitespace validation at the prepared commit. Tests run serially because existing CLI fixtures compile helper executables. Each policy command has a 270-second deadline. Private host and gate receipts remain under ignored `.allstack/` and are read through Allstack's evidence commands.
 
 The repository permits rebase merges only. At inspection, GitHub returned no rulesets and reported `main` unprotected; configured local hooks contained only `commit-msg`. Therefore GitHub CI is advisory. Allstack's managed publication requires its own successful exact-commit verification; this report does not imply that a manual Git push or GitHub merge is globally fenced.
 
